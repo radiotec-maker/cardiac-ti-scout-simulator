@@ -19,6 +19,7 @@ from model import (
     calculate_ideal_null_ti,
     calculate_post_contrast_t1,
     generate_ti_signal_curve,
+    validate_psir_time,
 )
 
 
@@ -32,6 +33,11 @@ class DisplayResult:
     post_t1_ms: float
     ideal_null_ti_ms: float
     corrected_null_ti_ms: float
+    psir_concentration: ConcentrationResult
+    psir_post_t1_ms: float
+    psir_ideal_null_ti_ms: float
+    psir_corrected_null_ti_ms: float
+    null_ti_change_ms: float
     ti_values_ms: object
     signal_percent: object
 
@@ -40,6 +46,7 @@ DEFAULT_STATE = {
     "weight_a": config.DEFAULT_WEIGHT_A_KG,
     "weight_b": config.DEFAULT_WEIGHT_B_KG,
     "scout_time": config.DEFAULT_SCOUT_TIME_MIN,
+    "psir_time": config.DEFAULT_PSIR_TIME_MIN,
     "native_t1": config.DEFAULT_NATIVE_T1_MS,
     "a_pk": config.DEFAULT_A_PK,
     "washout_rate": config.DEFAULT_WASHOUT_RATE_PER_MIN,
@@ -66,9 +73,12 @@ def reset_defaults() -> None:
 
 
 def calculate_display_result(weight_kg: float) -> DisplayResult:
-    """model.pyだけを使用して1体重分の表示結果を計算する。"""
+    """既存モデルを両撮像時刻へ適用し、1体重分の表示結果を計算する。"""
 
     dose = calculate_dose(weight_kg)
+    psir_time = validate_psir_time(
+        st.session_state.psir_time, st.session_state.scout_time
+    )
     concentration = calculate_apparent_myocardial_concentration(
         weight_kg,
         st.session_state.scout_time,
@@ -84,7 +94,23 @@ def calculate_display_result(weight_kg: float) -> DisplayResult:
     corrected_null_ti = calculate_corrected_null_ti(
         post_t1, st.session_state.facility_offset
     )
+    psir_concentration = calculate_apparent_myocardial_concentration(
+        weight_kg,
+        psir_time,
+        a_pk=st.session_state.a_pk,
+        washout_rate_per_min=st.session_state.washout_rate,
+    )
+    psir_post_t1 = calculate_post_contrast_t1(
+        st.session_state.native_t1,
+        psir_concentration.total_concentration_mmol_per_l,
+        relaxivity_per_mmol_l_s=st.session_state.relaxivity,
+    )
+    psir_ideal_null_ti = calculate_ideal_null_ti(psir_post_t1)
+    psir_corrected_null_ti = calculate_corrected_null_ti(
+        psir_post_t1, st.session_state.facility_offset
+    )
     ti_values, signal = generate_ti_signal_curve(
+        # Magnitude曲線は従来どおりTI scout時点のnull TIを使用する。
         corrected_null_ti,
         st.session_state.ti_min,
         st.session_state.ti_max,
@@ -97,6 +123,11 @@ def calculate_display_result(weight_kg: float) -> DisplayResult:
         post_t1_ms=post_t1,
         ideal_null_ti_ms=ideal_null_ti,
         corrected_null_ti_ms=corrected_null_ti,
+        psir_concentration=psir_concentration,
+        psir_post_t1_ms=psir_post_t1,
+        psir_ideal_null_ti_ms=psir_ideal_null_ti,
+        psir_corrected_null_ti_ms=psir_corrected_null_ti,
+        null_ti_change_ms=psir_corrected_null_ti - corrected_null_ti,
         ti_values_ms=ti_values,
         signal_percent=signal,
     )
@@ -110,8 +141,15 @@ def render_result_column(label: str, result: DisplayResult) -> None:
         "総投与量",
         f"{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg",
     )
-    st.metric("推定正常心筋T1", f"{result.post_t1_ms:.0f} ms")
-    st.metric("施設校正後null TI", f"{result.corrected_null_ti_ms:.0f} ms")
+    st.metric(
+        "TI scout時点の推定正常心筋null TI",
+        f"{result.corrected_null_ti_ms:.0f} ms",
+    )
+    st.metric(
+        "PSIR開始時点の推定正常心筋null TI",
+        f"{result.psir_corrected_null_ti_ms:.0f} ms",
+    )
+    st.metric("null TIの推定変化量", f"{result.null_ti_change_ms:+.0f} ms")
 
     details = pd.DataFrame(
         {
@@ -127,7 +165,11 @@ def render_result_column(label: str, result: DisplayResult) -> None:
                 "1回目由来見かけ濃度",
                 "2回目由来見かけ濃度",
                 "総心筋内見かけ濃度",
+                "モデル内部の推定造影後心筋T1",
                 "理想null TI",
+                "PSIR開始時点の総心筋内見かけ濃度",
+                "PSIR開始時点のモデル内部の推定造影後心筋T1",
+                "PSIR開始時点の理想null TI",
             ],
             "値": [
                 f"{result.dose.first_volume_ml:.2f} mL",
@@ -141,11 +183,18 @@ def render_result_column(label: str, result: DisplayResult) -> None:
                 f"{result.concentration.first_concentration_mmol_per_l:.3f} mM",
                 f"{result.concentration.second_concentration_mmol_per_l:.3f} mM",
                 f"{result.concentration.total_concentration_mmol_per_l:.3f} mM",
+                f"{result.post_t1_ms:.0f} ms",
                 f"{result.ideal_null_ti_ms:.0f} ms",
+                f"{result.psir_concentration.total_concentration_mmol_per_l:.3f} mM",
+                f"{result.psir_post_t1_ms:.0f} ms",
+                f"{result.psir_ideal_null_ti_ms:.0f} ms",
             ],
         }
     )
     st.dataframe(details, hide_index=True, width="stretch")
+    st.caption(
+        "このT1値は、LGE撮像で設定するInversion Time（TI）ではありません。"
+    )
 
 
 def render_signal_graph(result_a: DisplayResult, result_b: DisplayResult) -> None:
@@ -172,13 +221,15 @@ def render_signal_graph(result_a: DisplayResult, result_b: DisplayResult) -> Non
             go.Scatter(
                 x=[result.corrected_null_ti_ms],
                 y=[0.0],
-                mode="markers",
+                mode="markers+text",
                 name=f"体重{label} null",
                 marker={"color": colors[label], "size": 10, "symbol": "circle"},
+                text=[f"推定null TI：{result.corrected_null_ti_ms:.0f} ms"],
+                textposition="top center",
                 showlegend=False,
                 hovertemplate=(
-                    f"体重{label} null TI: "
-                    "%{x:.1f} ms<extra></extra>"
+                    f"体重{label}<br>推定null TI："
+                    "%{x:.0f} ms<extra></extra>"
                 ),
             )
         )
@@ -190,10 +241,7 @@ def render_signal_graph(result_a: DisplayResult, result_b: DisplayResult) -> Non
         )
 
     figure.update_layout(
-        title=(
-            f"造影後{st.session_state.scout_time:.1f}分における"
-            "正常心筋TI–信号強度曲線"
-        ),
+        title="TI scoutにおける正常心筋Magnitude信号曲線",
         xaxis_title="Inversion Time（TI）［ms］",
         yaxis_title="正常心筋の正規化Magnitude信号［%］",
         xaxis={"range": [st.session_state.ti_min, st.session_state.ti_max]},
@@ -213,6 +261,10 @@ initialize_state()
 
 st.title("心臓MRI 正常心筋TI–信号強度シミュレータ")
 st.caption("3 T・ガドビスト分割投与モデル")
+st.info(
+    "TI scoutで正常心筋のnull位置を確認し、PSIR LGEのTI設定を考えるための"
+    "教育用シミュレータ"
+)
 st.warning(
     "本アプリは、文献値および施設経験値に基づく教育・施設内検討用"
     "シミュレータです。患者個別の最適TIや造影剤投与量を決定するものでは"
@@ -223,7 +275,7 @@ st.warning(
 st.button("初期値に戻す", on_click=reset_defaults)
 
 st.subheader("入力条件")
-input_columns = st.columns(4)
+input_columns = st.columns(5)
 with input_columns[0]:
     weight_a = st.number_input(
         "比較体重A［kg］",
@@ -250,6 +302,15 @@ with input_columns[2]:
         format="%.1f",
     )
 with input_columns[3]:
+    st.number_input(
+        "PSIR撮像開始時刻［min］",
+        min_value=config.MIN_PSIR_TIME_MIN,
+        max_value=config.MAX_PSIR_TIME_MIN,
+        step=config.PSIR_TIME_STEP_MIN,
+        key="psir_time",
+        format="%.1f",
+    )
+with input_columns[4]:
     st.number_input(
         "正常心筋native T1［ms］",
         min_value=config.MIN_NATIVE_T1_MS,
@@ -320,9 +381,10 @@ null_difference_ms = abs(
 )
 st.caption(
     f"体重AとBのnull TI差：{null_difference_ms:.0f} ms ／ "
-    f"1回目注入後：{st.session_state.scout_time:.1f} min ／ "
-    f"2回目注入後："
+    f"TI scout：1回目注入後{st.session_state.scout_time:.1f} min ／ "
+    f"TI scout：2回目注入後"
     f"{st.session_state.scout_time - config.SECOND_INJECTION_TIME_MIN:.1f} min ／ "
+    f"PSIR開始：1回目注入後{st.session_state.psir_time:.1f} min ／ "
     f"native T1：{st.session_state.native_t1:.0f} ms ／ 磁場強度：3 T"
 )
 
@@ -383,6 +445,7 @@ with st.expander("モデル説明"):
 - 文献条件を超える投与量への適用には線形外挿が含まれます。
 - 推定null TIには暫定的な施設校正値を使用しています。
 - 信号曲線は正規化されたMagnitude相対信号で、実測DICOM信号値ではありません。
+- 本アプリはMagnitude TI scoutの信号曲線を簡略表示するもので、PSIR画像そのものの信号を再現するものではありません。
 - 実機固有のLook-Locker挙動、患者の腎機能・心拍出量などは反映していません。
 - 入力値や計算結果を保存せず、患者を特定できる情報も扱いません。
 - 本モデルは教育・施設内検討用であり、臨床的な個人予測や推奨を保証しません。

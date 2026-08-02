@@ -13,6 +13,7 @@ from model import (
     calculate_ideal_null_ti,
     calculate_post_contrast_t1,
     calculate_second_injection_concentration,
+    validate_psir_time,
 )
 
 
@@ -129,3 +130,56 @@ def test_result_records_used_coefficients():
     assert result.a_pk == config.DEFAULT_A_PK
     assert result.washout_rate_per_min == config.DEFAULT_WASHOUT_RATE_PER_MIN
     assert result.second_injection_time_min == config.SECOND_INJECTION_TIME_MIN
+
+
+def test_psir_time_configuration():
+    assert config.DEFAULT_PSIR_TIME_MIN == 8.0
+    assert config.MAX_PSIR_TIME_MIN == 15.0
+    assert config.PSIR_TIME_STEP_MIN == 0.1
+
+
+def test_psir_time_may_equal_scout_time():
+    assert validate_psir_time(5.5, 5.5) == 5.5
+
+
+@pytest.mark.parametrize("psir_time", [1.9, 15.1])
+def test_psir_time_must_be_in_input_range(psir_time):
+    with pytest.raises(ValueError, match="PSIR撮像開始時刻"):
+        validate_psir_time(psir_time, 5.5)
+
+
+def test_psir_time_must_not_precede_scout_time():
+    with pytest.raises(
+        ValueError, match="PSIR撮像開始時刻はTI scout撮像時刻以上"
+    ):
+        validate_psir_time(5.4, 5.5)
+
+
+@pytest.mark.parametrize(
+    ("weight", "expected_scout_null", "expected_psir_null"),
+    [
+        (50.0, 236.0, 256.0),
+        (70.0, 290.0, 315.0),
+    ],
+)
+def test_v1_1_reference_null_ti_values(
+    weight, expected_scout_null, expected_psir_null
+):
+    scout_concentration = calculate_apparent_myocardial_concentration(weight, 5.5)
+    scout_t1 = calculate_post_contrast_t1(
+        1250.0, scout_concentration.total_concentration_mmol_per_l
+    )
+    scout_null = calculate_corrected_null_ti(scout_t1)
+
+    psir_time = validate_psir_time(8.0, 5.5)
+    psir_concentration = calculate_apparent_myocardial_concentration(
+        weight, psir_time
+    )
+    psir_t1 = calculate_post_contrast_t1(
+        1250.0, psir_concentration.total_concentration_mmol_per_l
+    )
+    psir_null = calculate_corrected_null_ti(psir_t1)
+
+    assert scout_null == pytest.approx(expected_scout_null, abs=1.0)
+    assert psir_null == pytest.approx(expected_psir_null, abs=2.0)
+    assert psir_null - scout_null > 0.0

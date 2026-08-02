@@ -86,6 +86,20 @@ def validate_scout_time(time_min: float) -> float:
     return time
 
 
+def validate_psir_time(psir_time_min: float, scout_time_min: float) -> float:
+    """PSIR撮像開始時刻の範囲とTI scout以後であることを検証する。"""
+
+    scout_time = validate_scout_time(scout_time_min)
+    psir_time = _finite_number(psir_time_min, "PSIR撮像開始時刻")
+    if not config.MIN_PSIR_TIME_MIN <= psir_time <= config.MAX_PSIR_TIME_MIN:
+        raise ValueError("PSIR撮像開始時刻は2.0～15.0分の範囲で入力してください。")
+    if psir_time < scout_time:
+        raise ValueError(
+            "PSIR撮像開始時刻はTI scout撮像時刻以上で入力してください。"
+        )
+    return psir_time
+
+
 def calculate_injection_duration(
     volume_ml: float,
     injection_rate_ml_s: float = config.CONTRAST_INJECTION_RATE_ML_S,
