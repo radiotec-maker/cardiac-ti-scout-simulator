@@ -39,6 +39,18 @@ class ConcentrationResult:
     second_injection_time_min: float
 
 
+@dataclass(frozen=True)
+class BloodConcentrationResult:
+    """各投与由来および総血液内見かけ濃度（mM）を保持する。"""
+
+    first_concentration_mmol_per_l: float
+    second_concentration_mmol_per_l: float
+    total_concentration_mmol_per_l: float
+    a_blood: float
+    washout_rate_per_min: float
+    second_injection_time_min: float
+
+
 def _finite_number(value: float, label: str) -> float:
     """値を有限の実数として検証して返す。"""
 
@@ -59,6 +71,13 @@ def _positive_number(value: float, label: str) -> float:
     return number
 
 
+def _value_on_step(value: float, minimum: float, step: float) -> bool:
+    """値が最小値を起点とする指定刻み上にあるかを判定する。"""
+
+    step_count = (value - minimum) / step
+    return math.isclose(step_count, round(step_count), abs_tol=1e-9)
+
+
 def validate_weight(weight_kg: float) -> float:
     """体重が30～100 kgの入力範囲内であることを検証する。"""
 
@@ -75,6 +94,48 @@ def validate_native_t1(native_t1_ms: float) -> float:
     if not config.MIN_NATIVE_T1_MS <= native_t1 <= config.MAX_NATIVE_T1_MS:
         raise ValueError("native T1は1000～1600 msの範囲で入力してください。")
     return native_t1
+
+
+def validate_native_blood_t1(native_blood_t1_ms: float) -> float:
+    """native blood T1が1400～2200 msかつ10 ms刻みか検証する。"""
+
+    native_blood_t1 = _finite_number(native_blood_t1_ms, "native blood T1")
+    if not (
+        config.MIN_NATIVE_BLOOD_T1_MS
+        <= native_blood_t1
+        <= config.MAX_NATIVE_BLOOD_T1_MS
+    ):
+        raise ValueError(
+            "native blood T1は1400～2200 msの範囲で入力してください。"
+        )
+    if not _value_on_step(
+        native_blood_t1,
+        config.MIN_NATIVE_BLOOD_T1_MS,
+        config.NATIVE_BLOOD_T1_STEP_MS,
+    ):
+        raise ValueError("native blood T1は10 ms刻みで入力してください。")
+    return native_blood_t1
+
+
+def validate_blood_facility_offset(facility_offset_ms: float) -> float:
+    """血液専用施設校正値が-100～+100 msかつ1 ms刻みか検証する。"""
+
+    offset = _finite_number(facility_offset_ms, "血液専用施設校正値")
+    if not (
+        config.MIN_BLOOD_FACILITY_OFFSET_MS
+        <= offset
+        <= config.MAX_BLOOD_FACILITY_OFFSET_MS
+    ):
+        raise ValueError(
+            "血液専用施設校正値は-100～+100 msの範囲で入力してください。"
+        )
+    if not _value_on_step(
+        offset,
+        config.MIN_BLOOD_FACILITY_OFFSET_MS,
+        config.BLOOD_FACILITY_OFFSET_STEP_MS,
+    ):
+        raise ValueError("血液専用施設校正値は1 ms刻みで入力してください。")
+    return offset
 
 
 def validate_scout_time(time_min: float) -> float:
@@ -212,6 +273,75 @@ def calculate_apparent_myocardial_concentration(
     )
 
 
+def calculate_first_injection_blood_concentration(
+    weight_kg: float,
+    time_min: float,
+    a_blood: float = config.DEFAULT_A_BLOOD,
+    washout_rate_per_min: float = config.DEFAULT_BLOOD_WASHOUT_RATE_PER_MIN,
+) -> float:
+    """1回目投与由来の血液内見かけ濃度（mM）を計算する。"""
+
+    time = _finite_number(time_min, "造影後経過時間")
+    if time < config.FIRST_INJECTION_TIME_MIN:
+        raise ValueError("造影後経過時間は0分以上で入力してください。")
+    amplitude = _positive_number(a_blood, "A_blood")
+    washout = _positive_number(washout_rate_per_min, "k_blood")
+    dose = calculate_dose(weight_kg)
+    return amplitude * dose.first_dose_mmol_per_kg * math.exp(-washout * time)
+
+
+def calculate_second_injection_blood_concentration(
+    weight_kg: float,
+    time_min: float,
+    a_blood: float = config.DEFAULT_A_BLOOD,
+    washout_rate_per_min: float = config.DEFAULT_BLOOD_WASHOUT_RATE_PER_MIN,
+) -> float:
+    """2回目投与由来の血液濃度（mM）を共通注入時刻の区分式で計算する。"""
+
+    time = _finite_number(time_min, "造影後経過時間")
+    if time < config.FIRST_INJECTION_TIME_MIN:
+        raise ValueError("造影後経過時間は0分以上で入力してください。")
+    amplitude = _positive_number(a_blood, "A_blood")
+    washout = _positive_number(washout_rate_per_min, "k_blood")
+    if config.SECOND_INJECTION_TIME_MIN <= 0.0:
+        raise ValueError("2回目注入時刻は0より大きい必要があります。")
+    if time < config.SECOND_INJECTION_TIME_MIN:
+        return 0.0
+    dose = calculate_dose(weight_kg)
+    elapsed = time - config.SECOND_INJECTION_TIME_MIN
+    return amplitude * dose.second_dose_mmol_per_kg * math.exp(-washout * elapsed)
+
+
+def calculate_apparent_blood_concentration(
+    weight_kg: float,
+    time_min: float,
+    a_blood: float = config.DEFAULT_A_BLOOD,
+    washout_rate_per_min: float = config.DEFAULT_BLOOD_WASHOUT_RATE_PER_MIN,
+) -> BloodConcentrationResult:
+    """TI scout時点の2投与由来および総血液内見かけ濃度（mM）を返す。"""
+
+    time = validate_scout_time(time_min)
+    amplitude = _positive_number(a_blood, "A_blood")
+    washout = _positive_number(washout_rate_per_min, "k_blood")
+    first = calculate_first_injection_blood_concentration(
+        weight_kg, time, amplitude, washout
+    )
+    second = calculate_second_injection_blood_concentration(
+        weight_kg, time, amplitude, washout
+    )
+    total = first + second
+    if total < 0.0:
+        raise ValueError("血液内見かけ濃度は0以上である必要があります。")
+    return BloodConcentrationResult(
+        first_concentration_mmol_per_l=first,
+        second_concentration_mmol_per_l=second,
+        total_concentration_mmol_per_l=total,
+        a_blood=amplitude,
+        washout_rate_per_min=washout,
+        second_injection_time_min=config.SECOND_INJECTION_TIME_MIN,
+    )
+
+
 def calculate_post_contrast_t1(
     native_t1_ms: float,
     concentration_mmol_per_l: float,
@@ -229,11 +359,35 @@ def calculate_post_contrast_t1(
     return 1000.0 / post_r1_per_s
 
 
+def calculate_post_contrast_blood_t1(
+    native_blood_t1_ms: float,
+    concentration_mmol_per_l: float,
+    relaxivity_per_mmol_l_s: float = config.DEFAULT_BLOOD_RELAXIVITY_PER_MMOL_L_S,
+) -> float:
+    """R1=1000/native blood T1+r1_blood*Cから造影後血液T1（ms）を計算する。"""
+
+    native_blood_t1 = validate_native_blood_t1(native_blood_t1_ms)
+    concentration = _finite_number(concentration_mmol_per_l, "血液内見かけ濃度")
+    if concentration < 0.0:
+        raise ValueError("血液内見かけ濃度は0以上で入力してください。")
+    relaxivity = _positive_number(relaxivity_per_mmol_l_s, "r1_blood")
+    native_r1_per_s = 1000.0 / native_blood_t1
+    post_r1_per_s = native_r1_per_s + relaxivity * concentration
+    return 1000.0 / post_r1_per_s
+
+
 def calculate_ideal_null_ti(post_t1_ms: float) -> float:
     """理想反転回復式 T1×ln(2) から理想null TI（ms）を計算する。"""
 
     post_t1 = _positive_number(post_t1_ms, "造影後T1")
     return post_t1 * math.log(2.0)
+
+
+def calculate_ideal_blood_null_ti(post_blood_t1_ms: float) -> float:
+    """造影後血液T1×ln(2)から理論blood null TI（ms）を計算する。"""
+
+    post_blood_t1 = _positive_number(post_blood_t1_ms, "造影後血液T1")
+    return post_blood_t1 * math.log(2.0)
 
 
 def calculate_corrected_null_ti(
@@ -246,6 +400,19 @@ def calculate_corrected_null_ti(
     corrected = calculate_ideal_null_ti(post_t1_ms) + offset
     if corrected <= 0.0:
         raise ValueError("施設校正後null TIは0より大きい必要があります。")
+    return corrected
+
+
+def calculate_corrected_blood_null_ti(
+    post_blood_t1_ms: float,
+    facility_offset_ms: float = config.DEFAULT_BLOOD_FACILITY_OFFSET_MS,
+) -> float:
+    """理論blood null TIへ血液専用施設校正値を加える。"""
+
+    offset = validate_blood_facility_offset(facility_offset_ms)
+    corrected = calculate_ideal_blood_null_ti(post_blood_t1_ms) + offset
+    if corrected <= 0.0:
+        raise ValueError("血液専用施設校正後null TIは0より大きい必要があります。")
     return corrected
 
 
@@ -274,3 +441,17 @@ def generate_ti_signal_curve(
     signed_signal = 1.0 - 2.0 * np.exp(-ti_values / tau_display_ms)
     relative_signal_percent = 100.0 * np.abs(signed_signal)
     return ti_values, relative_signal_percent
+
+
+def generate_blood_ti_signal_curve(
+    blood_null_ti_ms: float,
+    ti_min_ms: float = config.DEFAULT_TI_MIN_MS,
+    ti_max_ms: float = config.DEFAULT_TI_MAX_MS,
+    step_ms: float = config.DEFAULT_TI_STEP_MS,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """血液専用校正後nullをゼロ点とする正規化Magnitude信号曲線を返す。"""
+
+    blood_null_ti = _positive_number(
+        blood_null_ti_ms, "血液専用施設校正後null TI"
+    )
+    return generate_ti_signal_curve(blood_null_ti, ti_min_ms, ti_max_ms, step_ms)
