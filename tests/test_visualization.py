@@ -23,6 +23,17 @@ def test_fifty_percent_is_middle_gray():
     assert signal_percent_to_rgb(50.0) == (128, 128, 128)
 
 
+def test_myocardial_gamma_keeps_null_black_and_brightens_low_signal():
+    import config
+
+    assert signal_percent_to_rgb(0.0, config.MYOCARDIAL_GRAYSCALE_GAMMA) == (0, 0, 0)
+    gamma_gray = signal_percent_to_rgb(
+        10.0, config.MYOCARDIAL_GRAYSCALE_GAMMA
+    )[0]
+    linear_gray = signal_percent_to_rgb(10.0)[0]
+    assert gamma_gray > linear_gray
+
+
 def test_signal_at_null_is_black():
     signal = calculate_signal_at_ti(250.0, 250.0)
     assert signal == pytest.approx(0.0, abs=1e-12)
@@ -55,16 +66,21 @@ def test_invalid_signal_is_rejected(invalid_signal):
         signal_percent_to_rgb(invalid_signal)
 
 
-def test_svg_contains_validated_myocardial_gray_and_cavity_pattern():
-    svg = generate_lv_short_axis_svg(50.0)
-    assert 'fill="rgb(128,128,128)"' in svg
-    assert 'fill="url(#lv-cavity-hatch)"' in svg
-    assert "正常心筋相対信号50.0パーセント" in svg
+def test_svg_contains_independent_myocardial_and_blood_gray():
+    svg = generate_lv_short_axis_svg(50.0, 25.0)
+    assert 'fill="rgb(180,180,180)"' in svg
+    assert 'fill="rgb(64,64,64)"' in svg
+    assert "血液相対信号25.0パーセント" in svg
 
 
 def test_svg_rejects_invalid_numeric_value():
     with pytest.raises(ValueError, match="正常心筋相対信号"):
-        generate_lv_short_axis_svg(float("inf"))
+        generate_lv_short_axis_svg(float("inf"), 50.0)
+
+
+def test_svg_rejects_invalid_blood_signal():
+    with pytest.raises(ValueError, match="血液相対信号"):
+        generate_lv_short_axis_svg(50.0, float("inf"))
 
 
 def test_left_operation_moves_250_to_240():
@@ -89,20 +105,31 @@ def test_illustration_ti_step_is_10_ms():
     assert config.ILLUSTRATION_TI_STEP_MS == 10.0
 
 
+def test_illustration_ti_large_step_is_30_ms():
+    import config
+
+    assert config.ILLUSTRATION_TI_LARGE_STEP_MS == 30.0
+
+
 def test_svg_contains_both_ventricles_and_lv_structures():
-    svg = generate_lv_short_axis_svg(50.0)
+    svg = generate_lv_short_axis_svg(50.0, 25.0)
     assert 'id="right-ventricle"' in svg
     assert 'id="left-ventricular-myocardium"' in svg
     assert 'id="left-ventricular-cavity"' in svg
-    assert "左室と右室を含む短軸模式図" in svg
+    assert "左室・右室短軸模式図" in svg
 
 
 def test_svg_pattern_ids_are_independent_for_a_and_b():
-    svg_a = generate_lv_short_axis_svg(50.0, "lv-cavity-hatch-a")
-    svg_b = generate_lv_short_axis_svg(50.0, "lv-cavity-hatch-b")
-    assert 'id="lv-cavity-hatch-a"' in svg_a
-    assert 'url(#lv-cavity-hatch-a)' in svg_a
-    assert "lv-cavity-hatch-b" not in svg_a
-    assert 'id="lv-cavity-hatch-b"' in svg_b
-    assert 'url(#lv-cavity-hatch-b)' in svg_b
-    assert "lv-cavity-hatch-a" not in svg_b
+    svg_a = generate_lv_short_axis_svg(50.0, 25.0, "lv-cavity-hatch-a")
+    svg_b = generate_lv_short_axis_svg(50.0, 25.0, "lv-cavity-hatch-b")
+    assert svg_a == svg_b
+
+
+def test_lv_cavity_and_rv_use_the_same_blood_gray():
+    svg = generate_lv_short_axis_svg(80.0, 25.0)
+    assert svg.count('fill="rgb(64,64,64)"') == 2
+
+
+def test_invalid_grayscale_gamma_is_rejected():
+    with pytest.raises(ValueError, match="グレースケールガンマ"):
+        signal_percent_to_rgb(50.0, 0.0)

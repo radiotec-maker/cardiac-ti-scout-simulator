@@ -43,13 +43,19 @@ def shift_illustration_ti(ti_ms: float, direction: int) -> float:
     )
 
 
-def signal_percent_to_rgb(signal_percent: float) -> tuple[int, int, int]:
-    """0～100%の相対信号を線形の8 bitグレースケールへ変換する。"""
+def signal_percent_to_rgb(
+    signal_percent: float,
+    gamma: float = 1.0,
+) -> tuple[int, int, int]:
+    """0～100%の相対信号をガンマ補正付き8 bitグレースケールへ変換する。"""
 
     signal = _finite_number(signal_percent, "正常心筋相対信号")
     if not 0.0 <= signal <= 100.0:
         raise ValueError("正常心筋相対信号は0～100%の範囲で入力してください。")
-    gray = round(255.0 * signal / 100.0)
+    gamma_value = _finite_number(gamma, "グレースケールガンマ")
+    if gamma_value <= 0.0:
+        raise ValueError("グレースケールガンマは0より大きい値を入力してください。")
+    gray = round(255.0 * (signal / 100.0) ** gamma_value)
     return gray, gray, gray
 
 
@@ -85,27 +91,28 @@ def _validate_pattern_id(pattern_id: str) -> str:
 
 def generate_lv_short_axis_svg(
     signal_percent: float,
+    blood_signal_percent: float,
     pattern_id: str = "lv-cavity-hatch",
 ) -> str:
-    """左室心筋・左室内腔・右室を含む簡略短軸SVGを返す。"""
+    """心筋と血液の信号に連動する簡略短軸SVGを返す。"""
 
     signal = _finite_number(signal_percent, "正常心筋相対信号")
-    red, green, blue = signal_percent_to_rgb(signal)
-    fill = f"rgb({red},{green},{blue})"
-    safe_pattern_id = _validate_pattern_id(pattern_id)
+    red, green, blue = signal_percent_to_rgb(
+        signal, config.MYOCARDIAL_GRAYSCALE_GAMMA
+    )
+    myocardial_fill = f"rgb({red},{green},{blue})"
+    blood_signal = _finite_number(blood_signal_percent, "血液相対信号")
+    blood_red, blood_green, blood_blue = signal_percent_to_rgb(blood_signal)
+    blood_fill = f"rgb({blood_red},{blood_green},{blood_blue})"
+    _validate_pattern_id(pattern_id)
     description = (
-        f"正常心筋相対信号{signal:.1f}パーセントの、左室と右室を含む短軸模式図"
+        f"正常心筋相対信号{signal:.1f}パーセント、血液相対信号"
+        f"{blood_signal:.1f}パーセントの左室・右室短軸模式図"
     )
     return f"""<svg width="320" height="230" viewBox="0 0 360 240" role="img" aria-label="{description}" style="display:block;max-width:100%;height:auto;margin:0 auto" xmlns="http://www.w3.org/2000/svg">
   <title>{description}</title>
-  <desc>画面右側の円環は正常左室心筋、中央の斜線部は未モデル化の左室内腔、左側の薄いグレーの三日月形は信号モデルを適用しない右室を示します。</desc>
-  <defs>
-    <pattern id="{safe_pattern_id}" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="12" height="12" fill="rgb(190,190,190)" />
-      <line x1="0" y1="0" x2="0" y2="12" stroke="rgb(105,105,105)" stroke-width="4" />
-    </pattern>
-  </defs>
-  <path id="right-ventricle" d="M 158 48 C 82 48 40 91 56 148 C 68 191 116 208 168 184 C 143 160 133 82 158 48 Z" fill="rgb(210,210,210)" stroke="rgb(85,85,85)" stroke-width="3" />
-  <ellipse id="left-ventricular-myocardium" cx="238" cy="120" rx="92" ry="94" fill="{fill}" stroke="rgb(70,70,70)" stroke-width="4" />
-  <ellipse id="left-ventricular-cavity" cx="238" cy="120" rx="50" ry="53" fill="url(#{safe_pattern_id})" stroke="rgb(70,70,70)" stroke-width="3" />
+  <desc>右側の円環は正常左室心筋、中央の楕円と左側の三日月形は同じ血液信号で表示した左室・右室内腔です。</desc>
+  <path id="right-ventricle" d="M 196 40 C 105 32 45 78 55 143 C 63 198 123 218 190 185 C 166 157 161 83 196 40 Z" fill="{blood_fill}" stroke="rgb(85,85,85)" stroke-width="3" />
+  <ellipse id="left-ventricular-myocardium" cx="238" cy="120" rx="92" ry="94" fill="{myocardial_fill}" stroke="rgb(70,70,70)" stroke-width="4" />
+  <ellipse id="left-ventricular-cavity" cx="238" cy="120" rx="50" ry="53" fill="{blood_fill}" stroke="rgb(70,70,70)" stroke-width="3" />
 </svg>"""

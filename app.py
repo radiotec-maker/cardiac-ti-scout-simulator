@@ -12,13 +12,19 @@ import streamlit.components.v1 as components
 
 import config
 from model import (
+    BloodConcentrationResult,
     ConcentrationResult,
     DoseResult,
+    calculate_apparent_blood_concentration,
     calculate_apparent_myocardial_concentration,
+    calculate_corrected_blood_null_ti,
     calculate_corrected_null_ti,
     calculate_dose,
+    calculate_ideal_blood_null_ti,
     calculate_ideal_null_ti,
+    calculate_post_contrast_blood_t1,
     calculate_post_contrast_t1,
+    generate_blood_ti_signal_curve,
     generate_ti_signal_curve,
     validate_psir_time,
 )
@@ -46,19 +52,29 @@ class DisplayResult:
     null_ti_change_ms: float
     ti_values_ms: object
     signal_percent: object
+    blood_concentration: BloodConcentrationResult
+    post_blood_t1_ms: float
+    ideal_blood_null_ti_ms: float
+    corrected_blood_null_ti_ms: float
+    blood_signal_percent: object
 
 
 DEFAULT_STATE = {
     "weight_a": config.DEFAULT_WEIGHT_A_KG,
     "weight_b": config.DEFAULT_WEIGHT_B_KG,
-    "scout_time": config.DEFAULT_SCOUT_TIME_MIN,
-    "psir_time": config.DEFAULT_PSIR_TIME_MIN,
+    "scout_time_after_second": config.DEFAULT_SCOUT_TIME_AFTER_SECOND_MIN,
+    "psir_time_after_second": config.DEFAULT_PSIR_TIME_AFTER_SECOND_MIN,
     "illustration_ti": config.DEFAULT_ILLUSTRATION_TI_MS,
     "native_t1": config.DEFAULT_NATIVE_T1_MS,
+    "native_blood_t1": config.DEFAULT_NATIVE_BLOOD_T1_MS,
     "a_pk": config.DEFAULT_A_PK,
     "washout_rate": config.DEFAULT_WASHOUT_RATE_PER_MIN,
     "relaxivity": config.DEFAULT_RELAXIVITY_PER_MMOL_L_S,
     "facility_offset": config.DEFAULT_FACILITY_OFFSET_MS,
+    "a_blood": config.DEFAULT_A_BLOOD,
+    "blood_washout_rate": config.DEFAULT_BLOOD_WASHOUT_RATE_PER_MIN,
+    "blood_relaxivity": config.DEFAULT_BLOOD_RELAXIVITY_PER_MMOL_L_S,
+    "blood_facility_offset": config.DEFAULT_BLOOD_FACILITY_OFFSET_MS,
     "ti_min": config.DEFAULT_TI_MIN_MS,
     "ti_max": config.DEFAULT_TI_MAX_MS,
     "ti_step": config.DEFAULT_TI_STEP_MS,
@@ -95,16 +111,40 @@ def increase_illustration_ti() -> None:
     )
 
 
+def decrease_illustration_ti_30() -> None:
+    """イラスト表示TIを30 ms減少させるボタンコールバック。"""
+
+    for _ in range(3):
+        st.session_state.illustration_ti = shift_illustration_ti(
+            st.session_state.illustration_ti, -1
+        )
+
+
+def increase_illustration_ti_30() -> None:
+    """イラスト表示TIを30 ms増加させるボタンコールバック。"""
+
+    for _ in range(3):
+        st.session_state.illustration_ti = shift_illustration_ti(
+            st.session_state.illustration_ti, 1
+        )
+
+
 def calculate_display_result(weight_kg: float) -> DisplayResult:
     """既存モデルを両撮像時刻へ適用し、1体重分の表示結果を計算する。"""
 
     dose = calculate_dose(weight_kg)
-    psir_time = validate_psir_time(
-        st.session_state.psir_time, st.session_state.scout_time
+    scout_time_from_first = (
+        config.SECOND_INJECTION_TIME_MIN
+        + st.session_state.scout_time_after_second
     )
+    psir_time_from_first = (
+        config.SECOND_INJECTION_TIME_MIN
+        + st.session_state.psir_time_after_second
+    )
+    psir_time = validate_psir_time(psir_time_from_first, scout_time_from_first)
     concentration = calculate_apparent_myocardial_concentration(
         weight_kg,
-        st.session_state.scout_time,
+        scout_time_from_first,
         a_pk=st.session_state.a_pk,
         washout_rate_per_min=st.session_state.washout_rate,
     )
@@ -139,6 +179,27 @@ def calculate_display_result(weight_kg: float) -> DisplayResult:
         st.session_state.ti_max,
         st.session_state.ti_step,
     )
+    blood_concentration = calculate_apparent_blood_concentration(
+        weight_kg,
+        scout_time_from_first,
+        a_blood=st.session_state.a_blood,
+        washout_rate_per_min=st.session_state.blood_washout_rate,
+    )
+    post_blood_t1 = calculate_post_contrast_blood_t1(
+        st.session_state.native_blood_t1,
+        blood_concentration.total_concentration_mmol_per_l,
+        relaxivity_per_mmol_l_s=st.session_state.blood_relaxivity,
+    )
+    ideal_blood_null_ti = calculate_ideal_blood_null_ti(post_blood_t1)
+    corrected_blood_null_ti = calculate_corrected_blood_null_ti(
+        post_blood_t1, st.session_state.blood_facility_offset
+    )
+    _, blood_signal = generate_blood_ti_signal_curve(
+        corrected_blood_null_ti,
+        st.session_state.ti_min,
+        st.session_state.ti_max,
+        st.session_state.ti_step,
+    )
     return DisplayResult(
         weight_kg=weight_kg,
         dose=dose,
@@ -153,6 +214,11 @@ def calculate_display_result(weight_kg: float) -> DisplayResult:
         null_ti_change_ms=psir_corrected_null_ti - corrected_null_ti,
         ti_values_ms=ti_values,
         signal_percent=signal,
+        blood_concentration=blood_concentration,
+        post_blood_t1_ms=post_blood_t1,
+        ideal_blood_null_ti_ms=ideal_blood_null_ti,
+        corrected_blood_null_ti_ms=corrected_blood_null_ti,
+        blood_signal_percent=blood_signal,
     )
 
 
@@ -167,6 +233,10 @@ def render_primary_result_column(label: str, result: DisplayResult) -> None:
     st.metric(
         "TI scout時点の推定正常心筋null TI",
         f"{result.corrected_null_ti_ms:.0f} ms",
+    )
+    st.metric(
+        "TI scout時点の推定血液null TI",
+        f"{result.corrected_blood_null_ti_ms:.0f} ms",
     )
     st.metric(
         "PSIR開始時点の推定正常心筋null TI",
@@ -198,6 +268,10 @@ def render_detail_column(label: str, result: DisplayResult) -> None:
                 "PSIR開始時点の総心筋内見かけ濃度",
                 "PSIR開始時点のモデル内部の推定造影後心筋T1",
                 "PSIR開始時点の理想null TI",
+                "TI scout時点の総血液内見かけ濃度",
+                "TI scout時点の推定造影後血液T1",
+                "理論blood null TI",
+                "血液専用校正後null TI",
             ],
             "値": [
                 f"{result.dose.first_volume_ml:.2f} mL",
@@ -216,6 +290,10 @@ def render_detail_column(label: str, result: DisplayResult) -> None:
                 f"{result.psir_concentration.total_concentration_mmol_per_l:.3f} mM",
                 f"{result.psir_post_t1_ms:.0f} ms",
                 f"{result.psir_ideal_null_ti_ms:.0f} ms",
+                f"{result.blood_concentration.total_concentration_mmol_per_l:.3f} mM",
+                f"{result.post_blood_t1_ms:.0f} ms",
+                f"{result.ideal_blood_null_ti_ms:.0f} ms",
+                f"{result.corrected_blood_null_ti_ms:.0f} ms",
             ],
         }
     )
@@ -230,12 +308,13 @@ def render_illustration_column(
     result: DisplayResult,
     display_ti_ms: float,
     signal_percent: float,
+    blood_signal_percent: float,
 ) -> None:
     """1体重分の左室短軸模式図と選択TIの数値を表示する。"""
 
     st.markdown(f"#### 体重{label}")
     pattern_id = f"lv-cavity-hatch-{label.lower()}"
-    svg = generate_lv_short_axis_svg(signal_percent, pattern_id)
+    svg = generate_lv_short_axis_svg(signal_percent, blood_signal_percent, pattern_id)
     components.html(
         f"""<div style="width:100%;height:240px;display:flex;align-items:center;justify-content:center;background:transparent;overflow:hidden">
 {svg}
@@ -248,10 +327,11 @@ def render_illustration_column(
 - 体重：{result.weight_kg:.0f} kg
 - 表示TI：{display_ti_ms:.0f} ms
 - 正常心筋相対信号：{signal_percent:.1f} %
+- 左室・右室血液相対信号：{blood_signal_percent:.1f} %
 - 推定null TI：{result.corrected_null_ti_ms:.0f} ms
+- blood null TI：{result.corrected_blood_null_ti_ms:.0f} ms
 """
     )
-    st.caption("左室内腔：未モデル化")
 
 
 def render_signal_graph(
@@ -260,6 +340,8 @@ def render_signal_graph(
     illustration_ti_ms: float,
     illustration_signal_a: float,
     illustration_signal_b: float,
+    illustration_blood_signal_a: float,
+    illustration_blood_signal_b: float,
 ) -> None:
     """2体重のMagnitude TI–信号強度曲線とnull位置を表示する。"""
 
@@ -268,6 +350,10 @@ def render_signal_graph(
     selected_signals = {
         "A": illustration_signal_a,
         "B": illustration_signal_b,
+    }
+    selected_blood_signals = {
+        "A": illustration_blood_signal_a,
+        "B": illustration_blood_signal_b,
     }
     for label, result in (("A", result_a), ("B", result_b)):
         name = (
@@ -286,6 +372,29 @@ def render_signal_graph(
         )
         figure.add_trace(
             go.Scatter(
+                x=result.ti_values_ms,
+                y=result.blood_signal_percent,
+                mode="lines",
+                name=f"体重{label} 血液",
+                line={"color": colors[label], "width": 2.5, "dash": "dot"},
+                hovertemplate="TI: %{x:.0f} ms<br>血液相対信号: %{y:.1f}%<extra>%{fullData.name}</extra>",
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[result.corrected_blood_null_ti_ms],
+                y=[0.0],
+                mode="markers+text",
+                name=f"体重{label} blood null",
+                marker={"color": colors[label], "size": 9, "symbol": "diamond-open"},
+                text=[f"blood null：{result.corrected_blood_null_ti_ms:.0f} ms"],
+                textposition="bottom center",
+                showlegend=False,
+                hovertemplate=f"体重{label}<br>blood null：%{{x:.0f}} ms<extra></extra>",
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
                 x=[result.corrected_null_ti_ms],
                 y=[0.0],
                 mode="markers+text",
@@ -297,6 +406,20 @@ def render_signal_graph(
                 hovertemplate=(
                     f"体重{label}<br>推定null TI："
                     "%{x:.0f} ms<extra></extra>"
+                ),
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[illustration_ti_ms],
+                y=[selected_blood_signals[label]],
+                mode="markers",
+                name=f"体重{label} 血液・イラスト表示TI",
+                marker={"color": colors[label], "size": 10, "symbol": "diamond-open"},
+                showlegend=False,
+                hovertemplate=(
+                    f"体重{label} 血液<br>イラスト表示TI：%{{x:.0f}} ms"
+                    "<br>相対信号：%{y:.1f}%<extra></extra>"
                 ),
             )
         )
@@ -331,9 +454,9 @@ def render_signal_graph(
     )
 
     figure.update_layout(
-        title="TI scoutにおける正常心筋Magnitude信号曲線",
+        title="TI scoutにおける正常心筋・血液Magnitude信号曲線",
         xaxis_title="Inversion Time（TI）［ms］",
-        yaxis_title="正常心筋の正規化Magnitude信号［%］",
+        yaxis_title="正規化Magnitude信号［%］",
         xaxis={"range": [st.session_state.ti_min, st.session_state.ti_max]},
         yaxis={"range": [0, 100]},
         hovermode="x unified",
@@ -365,7 +488,7 @@ st.warning(
 st.button("初期値に戻す", on_click=reset_defaults)
 
 st.subheader("入力条件")
-input_columns = st.columns(5)
+input_columns = st.columns(6)
 with input_columns[0]:
     weight_a = st.number_input(
         "比較体重A［kg］",
@@ -384,20 +507,20 @@ with input_columns[1]:
     )
 with input_columns[2]:
     st.number_input(
-        "TI scout撮像時刻［min］",
-        min_value=config.MIN_SCOUT_TIME_MIN,
-        max_value=config.MAX_SCOUT_TIME_MIN,
-        step=config.SCOUT_TIME_STEP_MIN,
-        key="scout_time",
+        "TI scout撮像時刻［2回目注入後 min］",
+        min_value=config.MIN_SCOUT_TIME_AFTER_SECOND_MIN,
+        max_value=config.MAX_SCOUT_TIME_AFTER_SECOND_MIN,
+        step=config.SCOUT_TIME_AFTER_SECOND_STEP_MIN,
+        key="scout_time_after_second",
         format="%.1f",
     )
 with input_columns[3]:
     st.number_input(
-        "PSIR撮像開始時刻［min］",
-        min_value=config.MIN_PSIR_TIME_MIN,
-        max_value=config.MAX_PSIR_TIME_MIN,
-        step=config.PSIR_TIME_STEP_MIN,
-        key="psir_time",
+        "PSIR撮像開始時刻［2回目注入後 min］",
+        min_value=config.MIN_PSIR_TIME_AFTER_SECOND_MIN,
+        max_value=config.MAX_PSIR_TIME_AFTER_SECOND_MIN,
+        step=config.PSIR_TIME_AFTER_SECOND_STEP_MIN,
+        key="psir_time_after_second",
         format="%.1f",
     )
 with input_columns[4]:
@@ -409,9 +532,18 @@ with input_columns[4]:
         key="native_t1",
         format="%.0f",
     )
+with input_columns[5]:
+    st.number_input(
+        "血液native T1［ms］",
+        min_value=config.MIN_NATIVE_BLOOD_T1_MS,
+        max_value=config.MAX_NATIVE_BLOOD_T1_MS,
+        step=config.NATIVE_BLOOD_T1_STEP_MS,
+        key="native_blood_t1",
+        format="%.0f",
+    )
 
 with st.expander("詳細設定", expanded=False):
-    detail_columns = st.columns(4)
+    detail_columns = st.columns(5)
     with detail_columns[0]:
         st.number_input("A_PK", step=0.00001, key="a_pk", format="%.5f")
         st.number_input(
@@ -430,6 +562,28 @@ with st.expander("詳細設定", expanded=False):
     with detail_columns[3]:
         st.number_input("TI計算刻み［ms］", step=1.0, key="ti_step")
         st.write(f"2回目注入時刻（固定）：{config.SECOND_INJECTION_TIME_MIN:.1f} min")
+    with detail_columns[4]:
+        st.number_input("A_blood", step=0.00001, key="a_blood", format="%.5f")
+        st.number_input(
+            "k_blood［min⁻¹］",
+            step=0.00001,
+            key="blood_washout_rate",
+            format="%.5f",
+        )
+        st.number_input(
+            "r1_blood［mM⁻¹s⁻¹］",
+            step=0.1,
+            key="blood_relaxivity",
+            format="%.1f",
+        )
+        st.number_input(
+            "血液専用施設校正値［ms］",
+            min_value=config.MIN_BLOOD_FACILITY_OFFSET_MS,
+            max_value=config.MAX_BLOOD_FACILITY_OFFSET_MS,
+            step=config.BLOOD_FACILITY_OFFSET_STEP_MS,
+            key="blood_facility_offset",
+            format="%.0f",
+        )
 
 reference_changed = any(
     not math.isclose(current, default)
@@ -444,6 +598,22 @@ if reference_changed:
         "文献参照モデルの係数が初期値から変更されています。"
         "表示結果は初版の基準モデルとは異なります。"
     )
+blood_reference_changed = any(
+    not math.isclose(current, default)
+    for current, default in (
+        (st.session_state.a_blood, config.DEFAULT_A_BLOOD),
+        (
+            st.session_state.blood_washout_rate,
+            config.DEFAULT_BLOOD_WASHOUT_RATE_PER_MIN,
+        ),
+        (
+            st.session_state.blood_relaxivity,
+            config.DEFAULT_BLOOD_RELAXIVITY_PER_MMOL_L_S,
+        ),
+    )
+)
+if blood_reference_changed:
+    st.warning("血液参照モデルの係数が初期値から変更されています。")
 if not math.isclose(
     st.session_state.facility_offset, config.DEFAULT_FACILITY_OFFSET_MS
 ):
@@ -451,6 +621,11 @@ if not math.isclose(
         "施設校正値が初期値から変更されています。推定null TIおよび"
         "信号曲線に変更が反映されています。"
     )
+if not math.isclose(
+    st.session_state.blood_facility_offset,
+    config.DEFAULT_BLOOD_FACILITY_OFFSET_MS,
+):
+    st.warning("血液専用施設校正値が初期値から変更されています。")
 
 try:
     result_a = calculate_display_result(weight_a)
@@ -460,6 +635,12 @@ try:
     )
     illustration_signal_b = calculate_signal_at_ti(
         result_b.corrected_null_ti_ms, st.session_state.illustration_ti
+    )
+    illustration_blood_signal_a = calculate_signal_at_ti(
+        result_a.corrected_blood_null_ti_ms, st.session_state.illustration_ti
+    )
+    illustration_blood_signal_b = calculate_signal_at_ti(
+        result_b.corrected_blood_null_ti_ms, st.session_state.illustration_ti
     )
 except ValueError as error:
     st.error(str(error))
@@ -477,11 +658,14 @@ null_difference_ms = abs(
 )
 st.caption(
     f"体重AとBのnull TI差：{null_difference_ms:.0f} ms ／ "
-    f"TI scout：1回目注入後{st.session_state.scout_time:.1f} min ／ "
-    f"TI scout：2回目注入後"
-    f"{st.session_state.scout_time - config.SECOND_INJECTION_TIME_MIN:.1f} min ／ "
-    f"PSIR開始：1回目注入後{st.session_state.psir_time:.1f} min ／ "
-    f"native T1：{st.session_state.native_t1:.0f} ms ／ 磁場強度：3 T"
+    f"TI scout：2回目注入後{st.session_state.scout_time_after_second:.1f} min ／ "
+    f"TI scout：1回目注入後"
+    f"{st.session_state.scout_time_after_second + config.SECOND_INJECTION_TIME_MIN:.1f} min ／ "
+    f"PSIR開始：2回目注入後{st.session_state.psir_time_after_second:.1f} min ／ "
+    f"PSIR開始：1回目注入後"
+    f"{st.session_state.psir_time_after_second + config.SECOND_INJECTION_TIME_MIN:.1f} min ／ "
+    f"心筋native T1：{st.session_state.native_t1:.0f} ms ／ "
+    f"血液native T1：{st.session_state.native_blood_t1:.0f} ms ／ 磁場強度：3 T"
 )
 
 if math.isclose(
@@ -499,10 +683,21 @@ render_signal_graph(
     st.session_state.illustration_ti,
     illustration_signal_a,
     illustration_signal_b,
+    illustration_blood_signal_a,
+    illustration_blood_signal_b,
 )
 
-illustration_control_columns = st.columns([1, 1.4, 1])
+illustration_control_columns = st.columns([1, 1, 1.4, 1, 1])
 with illustration_control_columns[0]:
+    st.button(
+        f"← {config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f} ms",
+        on_click=decrease_illustration_ti_30,
+        disabled=(
+            st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
+        ),
+        width="stretch",
+    )
+with illustration_control_columns[1]:
     st.button(
         f"← {config.ILLUSTRATION_TI_STEP_MS:.0f} ms",
         on_click=decrease_illustration_ti,
@@ -511,16 +706,25 @@ with illustration_control_columns[0]:
         ),
         width="stretch",
     )
-with illustration_control_columns[1]:
+with illustration_control_columns[2]:
     st.markdown(
         f"<h3 style='text-align:center'>表示TI："
         f"{st.session_state.illustration_ti:.0f} ms</h3>",
         unsafe_allow_html=True,
     )
-with illustration_control_columns[2]:
+with illustration_control_columns[3]:
     st.button(
         f"{config.ILLUSTRATION_TI_STEP_MS:.0f} ms →",
         on_click=increase_illustration_ti,
+        disabled=(
+            st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
+        ),
+        width="stretch",
+    )
+with illustration_control_columns[4]:
+    st.button(
+        f"{config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f} ms →",
+        on_click=increase_illustration_ti_30,
         disabled=(
             st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
         ),
@@ -535,6 +739,7 @@ with illustration_columns[0]:
         result_a,
         st.session_state.illustration_ti,
         illustration_signal_a,
+        illustration_blood_signal_a,
     )
 with illustration_columns[1]:
     render_illustration_column(
@@ -542,6 +747,7 @@ with illustration_columns[1]:
         result_b,
         st.session_state.illustration_ti,
         illustration_signal_b,
+        illustration_blood_signal_b,
     )
 
 st.subheader("計算詳細")
