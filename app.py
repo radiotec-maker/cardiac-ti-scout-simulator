@@ -8,6 +8,7 @@ import math
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 import config
 from model import (
@@ -20,6 +21,11 @@ from model import (
     calculate_post_contrast_t1,
     generate_ti_signal_curve,
     validate_psir_time,
+)
+from visualization import (
+    calculate_signal_at_ti,
+    generate_lv_short_axis_svg,
+    shift_illustration_ti,
 )
 
 
@@ -47,6 +53,7 @@ DEFAULT_STATE = {
     "weight_b": config.DEFAULT_WEIGHT_B_KG,
     "scout_time": config.DEFAULT_SCOUT_TIME_MIN,
     "psir_time": config.DEFAULT_PSIR_TIME_MIN,
+    "illustration_ti": config.DEFAULT_ILLUSTRATION_TI_MS,
     "native_t1": config.DEFAULT_NATIVE_T1_MS,
     "a_pk": config.DEFAULT_A_PK,
     "washout_rate": config.DEFAULT_WASHOUT_RATE_PER_MIN,
@@ -70,6 +77,22 @@ def reset_defaults() -> None:
 
     for key, value in DEFAULT_STATE.items():
         st.session_state[key] = value
+
+
+def decrease_illustration_ti() -> None:
+    """イラスト表示TIを1段階減少させるボタンコールバック。"""
+
+    st.session_state.illustration_ti = shift_illustration_ti(
+        st.session_state.illustration_ti, -1
+    )
+
+
+def increase_illustration_ti() -> None:
+    """イラスト表示TIを1段階増加させるボタンコールバック。"""
+
+    st.session_state.illustration_ti = shift_illustration_ti(
+        st.session_state.illustration_ti, 1
+    )
 
 
 def calculate_display_result(weight_kg: float) -> DisplayResult:
@@ -133,8 +156,8 @@ def calculate_display_result(weight_kg: float) -> DisplayResult:
     )
 
 
-def render_result_column(label: str, result: DisplayResult) -> None:
-    """1体重分の主要結果と計算内訳を表示する。"""
+def render_primary_result_column(label: str, result: DisplayResult) -> None:
+    """1体重分の主要結果を表示する。"""
 
     st.subheader(f"体重{label}：{result.weight_kg:.0f} kg")
     st.metric(
@@ -151,6 +174,11 @@ def render_result_column(label: str, result: DisplayResult) -> None:
     )
     st.metric("null TIの推定変化量", f"{result.null_ti_change_ms:+.0f} ms")
 
+
+def render_detail_column(label: str, result: DisplayResult) -> None:
+    """1体重分の計算詳細表を表示する。"""
+
+    st.markdown(f"#### 体重{label}：{result.weight_kg:.0f} kg")
     details = pd.DataFrame(
         {
             "項目": [
@@ -197,11 +225,50 @@ def render_result_column(label: str, result: DisplayResult) -> None:
     )
 
 
-def render_signal_graph(result_a: DisplayResult, result_b: DisplayResult) -> None:
+def render_illustration_column(
+    label: str,
+    result: DisplayResult,
+    display_ti_ms: float,
+    signal_percent: float,
+) -> None:
+    """1体重分の左室短軸模式図と選択TIの数値を表示する。"""
+
+    st.markdown(f"#### 体重{label}")
+    pattern_id = f"lv-cavity-hatch-{label.lower()}"
+    svg = generate_lv_short_axis_svg(signal_percent, pattern_id)
+    components.html(
+        f"""<div style="width:100%;height:240px;display:flex;align-items:center;justify-content:center;background:transparent;overflow:hidden">
+{svg}
+</div>""",
+        height=250,
+        scrolling=False,
+    )
+    st.markdown(
+        f"""
+- 体重：{result.weight_kg:.0f} kg
+- 表示TI：{display_ti_ms:.0f} ms
+- 正常心筋相対信号：{signal_percent:.1f} %
+- 推定null TI：{result.corrected_null_ti_ms:.0f} ms
+"""
+    )
+    st.caption("左室内腔：未モデル化")
+
+
+def render_signal_graph(
+    result_a: DisplayResult,
+    result_b: DisplayResult,
+    illustration_ti_ms: float,
+    illustration_signal_a: float,
+    illustration_signal_b: float,
+) -> None:
     """2体重のMagnitude TI–信号強度曲線とnull位置を表示する。"""
 
     figure = go.Figure()
     colors = {"A": "#1f77b4", "B": "#d62728"}
+    selected_signals = {
+        "A": illustration_signal_a,
+        "B": illustration_signal_b,
+    }
     for label, result in (("A", result_a), ("B", result_b)):
         name = (
             f"体重{label} {result.weight_kg:.0f} kg "
@@ -233,12 +300,35 @@ def render_signal_graph(result_a: DisplayResult, result_b: DisplayResult) -> Non
                 ),
             )
         )
+        figure.add_trace(
+            go.Scatter(
+                x=[illustration_ti_ms],
+                y=[selected_signals[label]],
+                mode="markers",
+                name=f"体重{label} イラスト表示TI",
+                marker={"color": colors[label], "size": 11, "symbol": "diamond"},
+                showlegend=False,
+                hovertemplate=(
+                    f"体重{label}<br>イラスト表示TI：%{{x:.0f}} ms"
+                    "<br>相対信号：%{y:.1f}%<extra></extra>"
+                ),
+            )
+        )
         figure.add_vline(
             x=result.corrected_null_ti_ms,
             line_color=colors[label],
             line_dash="dash",
             line_width=1.5,
         )
+
+    figure.add_vline(
+        x=illustration_ti_ms,
+        line_color="rgb(90,90,90)",
+        line_dash="dot",
+        line_width=2,
+        annotation_text="イラスト表示TI",
+        annotation_position="top",
+    )
 
     figure.update_layout(
         title="TI scoutにおける正常心筋Magnitude信号曲線",
@@ -365,6 +455,12 @@ if not math.isclose(
 try:
     result_a = calculate_display_result(weight_a)
     result_b = calculate_display_result(weight_b)
+    illustration_signal_a = calculate_signal_at_ti(
+        result_a.corrected_null_ti_ms, st.session_state.illustration_ti
+    )
+    illustration_signal_b = calculate_signal_at_ti(
+        result_b.corrected_null_ti_ms, st.session_state.illustration_ti
+    )
 except ValueError as error:
     st.error(str(error))
     st.stop()
@@ -372,9 +468,9 @@ except ValueError as error:
 st.subheader("主要結果")
 result_columns = st.columns(2)
 with result_columns[0]:
-    render_result_column("A", result_a)
+    render_primary_result_column("A", result_a)
 with result_columns[1]:
-    render_result_column("B", result_b)
+    render_primary_result_column("B", result_b)
 
 null_difference_ms = abs(
     result_a.corrected_null_ti_ms - result_b.corrected_null_ti_ms
@@ -397,7 +493,63 @@ if math.isclose(
         "2本の曲線は重なっています。"
     )
 
-render_signal_graph(result_a, result_b)
+render_signal_graph(
+    result_a,
+    result_b,
+    st.session_state.illustration_ti,
+    illustration_signal_a,
+    illustration_signal_b,
+)
+
+illustration_control_columns = st.columns([1, 1.4, 1])
+with illustration_control_columns[0]:
+    st.button(
+        f"← {config.ILLUSTRATION_TI_STEP_MS:.0f} ms",
+        on_click=decrease_illustration_ti,
+        disabled=(
+            st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
+        ),
+        width="stretch",
+    )
+with illustration_control_columns[1]:
+    st.markdown(
+        f"<h3 style='text-align:center'>表示TI："
+        f"{st.session_state.illustration_ti:.0f} ms</h3>",
+        unsafe_allow_html=True,
+    )
+with illustration_control_columns[2]:
+    st.button(
+        f"{config.ILLUSTRATION_TI_STEP_MS:.0f} ms →",
+        on_click=increase_illustration_ti,
+        disabled=(
+            st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
+        ),
+        width="stretch",
+    )
+
+st.subheader("左室短軸イラスト")
+illustration_columns = st.columns(2)
+with illustration_columns[0]:
+    render_illustration_column(
+        "A",
+        result_a,
+        st.session_state.illustration_ti,
+        illustration_signal_a,
+    )
+with illustration_columns[1]:
+    render_illustration_column(
+        "B",
+        result_b,
+        st.session_state.illustration_ti,
+        illustration_signal_b,
+    )
+
+st.subheader("計算詳細")
+detail_columns = st.columns(2)
+with detail_columns[0]:
+    render_detail_column("A", result_a)
+with detail_columns[1]:
+    render_detail_column("B", result_b)
 
 with st.expander("自施設の投与プロトコル"):
     protocol = pd.DataFrame(

@@ -133,6 +133,7 @@ def test_result_records_used_coefficients():
 
 
 def test_psir_time_configuration():
+    assert config.DEFAULT_SCOUT_TIME_MIN == 5.0
     assert config.DEFAULT_PSIR_TIME_MIN == 8.0
     assert config.MAX_PSIR_TIME_MIN == 15.0
     assert config.PSIR_TIME_STEP_MIN == 0.1
@@ -158,20 +159,24 @@ def test_psir_time_must_not_precede_scout_time():
 @pytest.mark.parametrize(
     ("weight", "expected_scout_null", "expected_psir_null"),
     [
-        (50.0, 236.0, 256.0),
-        (70.0, 290.0, 315.0),
+        (50.0, 232.0, 256.0),
+        (70.0, 285.0, 315.0),
     ],
 )
 def test_v1_1_reference_null_ti_values(
     weight, expected_scout_null, expected_psir_null
 ):
-    scout_concentration = calculate_apparent_myocardial_concentration(weight, 5.5)
+    scout_concentration = calculate_apparent_myocardial_concentration(
+        weight, config.DEFAULT_SCOUT_TIME_MIN
+    )
     scout_t1 = calculate_post_contrast_t1(
         1250.0, scout_concentration.total_concentration_mmol_per_l
     )
     scout_null = calculate_corrected_null_ti(scout_t1)
 
-    psir_time = validate_psir_time(8.0, 5.5)
+    psir_time = validate_psir_time(
+        config.DEFAULT_PSIR_TIME_MIN, config.DEFAULT_SCOUT_TIME_MIN
+    )
     psir_concentration = calculate_apparent_myocardial_concentration(
         weight, psir_time
     )
