@@ -175,21 +175,29 @@ def calculate_injection_duration(
 
 
 def calculate_dose(weight_kg: float) -> DoseResult:
-    """体重から2回分割投与量と10 mL上限、各注入時間を計算する。"""
+    """0.1 mL単位の実投与量、10 mL上限、各注入時間を計算する。"""
 
     weight = validate_weight(weight_kg)
 
     # 1.0 mmol/mLなので、mmolとmLの数値は等しい。
-    first_volume = config.FIRST_DOSE_MMOL_PER_KG * weight
-    available_volume = config.MAX_TOTAL_VOLUME_ML - first_volume
-    second_volume = min(
-        config.SECOND_TARGET_DOSE_MMOL_PER_KG * weight,
-        available_volume,
+    theoretical_first_volume = config.FIRST_DOSE_MMOL_PER_KG * weight
+    # インジェクターの設定単位0.1 mLへ切り上げる。
+    first_volume = (
+        math.ceil(
+            theoretical_first_volume / config.INJECTOR_VOLUME_STEP_ML - 1e-12
+        )
+        * config.INJECTOR_VOLUME_STEP_ML
     )
+    target_total_volume = min(
+        config.TARGET_TOTAL_DOSE_MMOL_PER_KG * weight,
+        config.MAX_TOTAL_VOLUME_ML,
+    )
+    # 2回目で目標総量（50 kg超では10 mL）へ合わせる。
+    second_volume = target_total_volume - first_volume
     if second_volume < 0.0:
         raise ValueError("2回目投与量が負になりました。投与条件を確認してください。")
 
-    total_volume = first_volume + second_volume
+    total_volume = target_total_volume
     if total_volume > config.MAX_TOTAL_VOLUME_ML + np.finfo(float).eps:
         raise ValueError("総投与量は10 mLを超えることができません。")
 

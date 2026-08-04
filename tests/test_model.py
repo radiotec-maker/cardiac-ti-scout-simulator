@@ -29,9 +29,9 @@ def _model_results(weight, time=5.5, native_t1=1250.0):
 @pytest.mark.parametrize(
     ("weight", "expected_concentration", "expected_t1", "expected_null"),
     [
-        (50.0, 0.616, 258.0, 236.0),
-        (55.0, 0.558, 278.0, 250.0),
-        (70.0, 0.435, 336.0, 290.0),
+        (50.0, 0.603, 262.0, 239.0),
+        (55.0, 0.547, 283.0, 253.0),
+        (70.0, 0.427, 341.0, 293.0),
     ],
 )
 def test_reference_calculations(weight, expected_concentration, expected_t1, expected_null):
@@ -58,8 +58,9 @@ def test_concentration_is_sum_of_two_injections():
 
 
 def test_second_injection_piecewise_model():
-    assert calculate_second_injection_concentration(50.0, 1.999) == 0.0
-    assert calculate_second_injection_concentration(50.0, 2.0) > 0.0
+    injection_time = config.SECOND_INJECTION_TIME_MIN
+    assert calculate_second_injection_concentration(50.0, injection_time - 0.001) == 0.0
+    assert calculate_second_injection_concentration(50.0, injection_time) > 0.0
 
 
 def test_t1_and_ideal_null_equations():
@@ -94,9 +95,9 @@ def test_time_dependence():
     assert null_values == sorted(null_values)
 
 
-def test_calibration_point_is_about_250_ms():
+def test_legacy_calibration_condition_with_new_injection_time():
     _, _, null_ti = _model_results(55.0, 5.5, 1250.0)
-    assert null_ti == pytest.approx(250.0, abs=1.0)
+    assert null_ti == pytest.approx(253.0, abs=1.0)
 
 
 @pytest.mark.parametrize(
@@ -135,7 +136,7 @@ def test_result_records_used_coefficients():
 def test_psir_time_configuration():
     assert config.DEFAULT_SCOUT_TIME_MIN == 5.0
     assert config.DEFAULT_PSIR_TIME_MIN == 8.0
-    assert config.MAX_PSIR_TIME_MIN == 15.0
+    assert config.MAX_PSIR_TIME_MIN == 16.5
     assert config.PSIR_TIME_STEP_MIN == 0.1
 
 
@@ -143,7 +144,7 @@ def test_psir_time_may_equal_scout_time():
     assert validate_psir_time(5.5, 5.5) == 5.5
 
 
-@pytest.mark.parametrize("psir_time", [1.9, 15.1])
+@pytest.mark.parametrize("psir_time", [1.9, 16.6])
 def test_psir_time_must_be_in_input_range(psir_time):
     with pytest.raises(ValueError, match="PSIR撮像開始時刻"):
         validate_psir_time(psir_time, 5.5)
@@ -159,8 +160,8 @@ def test_psir_time_must_not_precede_scout_time():
 @pytest.mark.parametrize(
     ("weight", "expected_scout_null", "expected_psir_null"),
     [
-        (50.0, 232.0, 256.0),
-        (70.0, 285.0, 315.0),
+        (50.0, 235.0, 259.0),
+        (70.0, 288.0, 317.0),
     ],
 )
 def test_v1_1_reference_null_ti_values(

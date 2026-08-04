@@ -60,8 +60,7 @@ class DisplayResult:
 
 
 DEFAULT_STATE = {
-    "weight_a": config.DEFAULT_WEIGHT_A_KG,
-    "weight_b": config.DEFAULT_WEIGHT_B_KG,
+    "weight": config.DEFAULT_WEIGHT_A_KG,
     "scout_time_after_second": config.DEFAULT_SCOUT_TIME_AFTER_SECOND_MIN,
     "psir_time_after_second": config.DEFAULT_PSIR_TIME_AFTER_SECOND_MIN,
     "illustration_ti": config.DEFAULT_ILLUSTRATION_TI_MS,
@@ -222,33 +221,240 @@ def calculate_display_result(weight_kg: float) -> DisplayResult:
     )
 
 
-def render_primary_result_column(label: str, result: DisplayResult) -> None:
-    """1体重分の主要結果を表示する。"""
+def render_primary_result(result: DisplayResult) -> None:
+    """設定体重の主要結果を表示する。"""
 
-    st.subheader(f"体重{label}：{result.weight_kg:.0f} kg")
-    st.metric(
-        "総投与量",
-        f"{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg",
+    st.subheader(f"設定体重：{result.weight_kg:.0f} kg")
+    columns = st.columns(4)
+    columns[0].metric(
+        "総投与量", f"{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg"
     )
-    st.metric(
-        "TI scout時点の推定正常心筋null TI",
+    columns[1].metric(
+        f"TI scout {st.session_state.scout_time_after_second:.1f}分後の予想心筋null TI",
         f"{result.corrected_null_ti_ms:.0f} ms",
     )
-    st.metric(
-        "TI scout時点の推定血液null TI",
+    columns[2].metric(
+        f"TI scout {st.session_state.scout_time_after_second:.1f}分後の予想血液null TI",
         f"{result.corrected_blood_null_ti_ms:.0f} ms",
     )
-    st.metric(
-        "PSIR開始時点の推定正常心筋null TI",
+    scout_myo_blood_difference = (
+        result.corrected_null_ti_ms - result.corrected_blood_null_ti_ms
+    )
+    psir_myo_blood_difference = (
+        result.psir_corrected_null_ti_ms - result.corrected_blood_null_ti_ms
+    )
+    columns[2].markdown(
+        '<div class="null-reference-stack">'
+        '<div class="null-ti-difference">'
+        '<span>TI scout正常心筋null TIとの差</span>'
+        f'<strong>{scout_myo_blood_difference:+.0f} ms</strong>'
+        '</div>'
+        '<div class="null-ti-difference">'
+        '<span>PSIR正常心筋null TIとの差</span>'
+        f'<strong>{psir_myo_blood_difference:+.0f} ms</strong>'
+        '</div>'
+        '<small>参考値：心筋null TI − TI scout血液null TI</small>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    columns[3].metric(
+        f"PSIR {st.session_state.psir_time_after_second:.1f}分後の予想心筋null TI",
         f"{result.psir_corrected_null_ti_ms:.0f} ms",
     )
-    st.metric("null TIの推定変化量", f"{result.null_ti_change_ms:+.0f} ms")
+    columns[3].markdown(
+        '<div class="null-ti-difference">'
+        '<span>TI scout正常心筋null TIとの差</span>'
+        f'<strong>{result.null_ti_change_ms:+.0f} ms</strong>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 
-def render_detail_column(label: str, result: DisplayResult) -> None:
-    """1体重分の計算詳細表を表示する。"""
+def render_injection_table(result: DisplayResult) -> None:
+    """設定体重に対するインジェクター設定値を表形式で表示する。"""
 
-    st.markdown(f"#### 体重{label}：{result.weight_kg:.0f} kg")
+    theoretical_first = config.FIRST_DOSE_MMOL_PER_KG * result.weight_kg
+    required_total_volume = (
+        config.TARGET_TOTAL_DOSE_MMOL_PER_KG * result.weight_kg
+    )
+    dose_shortfall = max(
+        0.0,
+        config.TARGET_TOTAL_DOSE_MMOL_PER_KG
+        - result.dose.total_dose_mmol_per_kg,
+    )
+    meets_standard = math.isclose(
+        result.dose.total_dose_mmol_per_kg,
+        config.TARGET_TOTAL_DOSE_MMOL_PER_KG,
+        abs_tol=1e-12,
+    )
+    dose_summary = pd.DataFrame(
+        {
+            "確認項目": [
+                "ガドビスト使用可能総量",
+                "規定投与量",
+                "設定体重で規定量に必要な総量",
+                "実際の総投与量",
+                "体重当たり実投与量",
+                "規定量に対する割合",
+                "規定量との差",
+                "判定",
+            ],
+            "値": [
+                f"{config.MAX_TOTAL_VOLUME_ML:.1f} mL",
+                f"{config.TARGET_TOTAL_DOSE_MMOL_PER_KG:.3f} mmol/kg",
+                f"{required_total_volume:.1f} mL",
+                f"{result.dose.total_volume_ml:.1f} mL",
+                f"{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg",
+                f"{result.dose.target_dose_ratio_percent:.1f} %",
+                f"-{dose_shortfall:.3f} mmol/kg" if dose_shortfall > 0 else "差なし",
+                "規定量を満たす" if meets_standard else "規定量を満たさない",
+            ],
+        }
+    )
+    injection_table = pd.DataFrame(
+        {
+            "項目": [
+                "目標・計算量",
+                "インジェクター設定量",
+                "実投与量",
+                "注入速度",
+                "造影剤注入時間",
+            ],
+            "1回目（perfusion）": [
+                f"0.05 mmol/kg = {theoretical_first:.2f} mL",
+                f"{result.dose.first_volume_ml:.1f} mL（0.1 mL単位で切り上げ）",
+                f"{result.dose.first_dose_mmol_per_kg:.3f} mmol/kg",
+                f"{config.CONTRAST_INJECTION_RATE_ML_S:.1f} mL/s",
+                f"{result.dose.first_injection_duration_s:.2f} s",
+            ],
+            "2回目（追加注入）": [
+                "総投与量が目標値となる残量",
+                f"{result.dose.second_volume_ml:.1f} mL",
+                f"{result.dose.second_dose_mmol_per_kg:.3f} mmol/kg",
+                f"{config.CONTRAST_INJECTION_RATE_ML_S:.1f} mL/s",
+                f"{result.dose.second_injection_duration_s:.2f} s",
+            ],
+        }
+    )
+    st.subheader("造影剤投与量")
+    st.caption(
+        f"設定体重 {result.weight_kg:.0f} kg に対するインジェクター設定値です。"
+        "体重を変更すると自動的に再計算されます。"
+    )
+    dose_columns = st.columns(3)
+    dose_columns[0].metric(
+        "1回目（perfusion）", f"{result.dose.first_volume_ml:.1f} mL"
+    )
+    dose_columns[1].metric(
+        "2回目（追加注入）", f"{result.dose.second_volume_ml:.1f} mL"
+    )
+    dose_columns[2].metric(
+        f"実投与量（目標 {config.TARGET_TOTAL_DOSE_MMOL_PER_KG:.3f} mmol/kg）",
+        f"{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg",
+    )
+
+    with st.expander("造影剤注入条件の詳細を確認", expanded=False):
+        st.dataframe(dose_summary, hide_index=True, width="stretch")
+        if result.weight_kg <= 50.0:
+            st.info(
+                f"{result.weight_kg:.0f} kg：目標0.200 mmol/kgを維持し、"
+                "インジェクター設定量を自動計算しています。"
+            )
+        else:
+            st.warning(
+                f"{result.weight_kg:.0f} kg：総量10.0 mLを上限として、"
+                f"実投与量は{result.dose.total_dose_mmol_per_kg:.3f} mmol/kgです。"
+                f"目標0.200 mmol/kgを{dose_shortfall:.3f} mmol/kg下回ります。"
+            )
+        st.dataframe(injection_table, hide_index=True, width="stretch")
+
+
+def render_psir_ti_guide(result: DisplayResult) -> None:
+    """選択したPSIR開始時刻から15分までの推定心筋null TIを表示する。"""
+
+    guide_start_min = float(st.session_state.psir_time_after_second)
+    guide_start_label = (
+        f"{guide_start_min:.0f}"
+        if guide_start_min.is_integer()
+        else f"{guide_start_min:.1f}"
+    )
+    baseline_time_from_first = config.SECOND_INJECTION_TIME_MIN + guide_start_min
+    baseline_concentration = calculate_apparent_myocardial_concentration(
+        result.weight_kg,
+        baseline_time_from_first,
+        a_pk=st.session_state.a_pk,
+        washout_rate_per_min=st.session_state.washout_rate,
+    )
+    baseline_post_t1 = calculate_post_contrast_t1(
+        st.session_state.native_t1,
+        baseline_concentration.total_concentration_mmol_per_l,
+        relaxivity_per_mmol_l_s=st.session_state.relaxivity,
+    )
+    baseline_null_ti = calculate_corrected_null_ti(
+        baseline_post_t1, st.session_state.facility_offset
+    )
+    table_data: dict[str, list[str]] = {
+        "項目": ["設定TI目安", f"{guide_start_label}分からの変化"]
+    }
+    number_of_minutes = int(
+        math.floor(config.MAX_PSIR_TIME_AFTER_SECOND_MIN - guide_start_min + 1e-9)
+    )
+    guide_times = [guide_start_min + offset for offset in range(number_of_minutes + 1)]
+    for elapsed_after_second in guide_times:
+        time_from_first = config.SECOND_INJECTION_TIME_MIN + elapsed_after_second
+        concentration = calculate_apparent_myocardial_concentration(
+            result.weight_kg,
+            time_from_first,
+            a_pk=st.session_state.a_pk,
+            washout_rate_per_min=st.session_state.washout_rate,
+        )
+        post_t1 = calculate_post_contrast_t1(
+            st.session_state.native_t1,
+            concentration.total_concentration_mmol_per_l,
+            relaxivity_per_mmol_l_s=st.session_state.relaxivity,
+        )
+        null_ti = calculate_corrected_null_ti(
+            post_t1, st.session_state.facility_offset
+        )
+        time_label = (
+            f"{elapsed_after_second:.0f}"
+            if elapsed_after_second.is_integer()
+            else f"{elapsed_after_second:.1f}"
+        )
+        table_data[f"{time_label}分"] = [
+            f"{null_ti:.0f} ms",
+            (
+                "±0 ms"
+                if math.isclose(elapsed_after_second, guide_start_min)
+                else f"{null_ti - baseline_null_ti:+.0f} ms"
+            ),
+        ]
+    st.subheader("PSIR撮像時の設定TI目安")
+    st.markdown(
+        "**PSIR撮像開始時刻［2回目注入後 min］**"
+    )
+    st.caption(
+        f"設定体重：{result.weight_kg:.0f} kgで計算した推定値です。"
+    )
+    guide_table = pd.DataFrame(table_data).to_html(
+        index=False,
+        classes="psir-guide-table",
+        border=0,
+        escape=True,
+    )
+    st.markdown(
+        f'<div class="psir-guide-wrap">{guide_table}</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "時間はインジェクターの2回目造影剤注入開始を0分とした経過時間です。"
+        "表示値は推定正常心筋null TIであり、PSIR撮像時の設定TIを考えるための目安です。"
+        f"予想変化は{guide_start_label}分時点の推定値を基準としています。"
+    )
+def render_detail(result: DisplayResult) -> None:
+    """設定体重の計算詳細表を表示する。"""
+
+    st.markdown(f"#### 設定体重：{result.weight_kg:.0f} kg")
     details = pd.DataFrame(
         {
             "項目": [
@@ -304,16 +510,14 @@ def render_detail_column(label: str, result: DisplayResult) -> None:
 
 
 def render_illustration_column(
-    label: str,
     result: DisplayResult,
     display_ti_ms: float,
     signal_percent: float,
     blood_signal_percent: float,
 ) -> None:
-    """1体重分の左室短軸模式図と選択TIの数値を表示する。"""
+    """設定体重の左室短軸模式図と選択TIの数値を表示する。"""
 
-    st.markdown(f"#### 体重{label}")
-    pattern_id = f"lv-cavity-hatch-{label.lower()}"
+    pattern_id = "lv-cavity-hatch"
     svg = generate_lv_short_axis_svg(signal_percent, blood_signal_percent, pattern_id)
     components.html(
         f"""<div style="width:100%;height:240px;display:flex;align-items:center;justify-content:center;background:transparent;overflow:hidden">
@@ -322,127 +526,60 @@ def render_illustration_column(
         height=250,
         scrolling=False,
     )
-    st.markdown(
-        f"""
-- 体重：{result.weight_kg:.0f} kg
-- 表示TI：{display_ti_ms:.0f} ms
-- 正常心筋相対信号：{signal_percent:.1f} %
-- 左室・右室血液相対信号：{blood_signal_percent:.1f} %
-- 推定null TI：{result.corrected_null_ti_ms:.0f} ms
-- blood null TI：{result.corrected_blood_null_ti_ms:.0f} ms
-"""
-    )
 
 
 def render_signal_graph(
-    result_a: DisplayResult,
-    result_b: DisplayResult,
+    result: DisplayResult,
     illustration_ti_ms: float,
-    illustration_signal_a: float,
-    illustration_signal_b: float,
-    illustration_blood_signal_a: float,
-    illustration_blood_signal_b: float,
+    illustration_signal: float,
+    illustration_blood_signal: float,
 ) -> None:
-    """2体重のMagnitude TI–信号強度曲線とnull位置を表示する。"""
+    """設定体重の心筋・血液Magnitude曲線とnull位置を表示する。"""
 
     figure = go.Figure()
-    colors = {"A": "#1f77b4", "B": "#d62728"}
-    selected_signals = {
-        "A": illustration_signal_a,
-        "B": illustration_signal_b,
-    }
-    selected_blood_signals = {
-        "A": illustration_blood_signal_a,
-        "B": illustration_blood_signal_b,
-    }
-    for label, result in (("A", result_a), ("B", result_b)):
-        name = (
-            f"体重{label} {result.weight_kg:.0f} kg "
-            f"({result.dose.total_dose_mmol_per_kg:.3f} mmol/kg)"
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=result.ti_values_ms,
-                y=result.signal_percent,
-                mode="lines",
-                name=name,
-                line={"color": colors[label], "width": 3},
-                hovertemplate="TI: %{x:.0f} ms<br>相対信号: %{y:.1f}%<extra>%{fullData.name}</extra>",
-            )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=result.ti_values_ms,
-                y=result.blood_signal_percent,
-                mode="lines",
-                name=f"体重{label} 血液",
-                line={"color": colors[label], "width": 2.5, "dash": "dot"},
-                hovertemplate="TI: %{x:.0f} ms<br>血液相対信号: %{y:.1f}%<extra>%{fullData.name}</extra>",
-            )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=[result.corrected_blood_null_ti_ms],
-                y=[0.0],
-                mode="markers+text",
-                name=f"体重{label} blood null",
-                marker={"color": colors[label], "size": 9, "symbol": "diamond-open"},
-                text=[f"blood null：{result.corrected_blood_null_ti_ms:.0f} ms"],
-                textposition="bottom center",
-                showlegend=False,
-                hovertemplate=f"体重{label}<br>blood null：%{{x:.0f}} ms<extra></extra>",
-            )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=[result.corrected_null_ti_ms],
-                y=[0.0],
-                mode="markers+text",
-                name=f"体重{label} null",
-                marker={"color": colors[label], "size": 10, "symbol": "circle"},
-                text=[f"推定null TI：{result.corrected_null_ti_ms:.0f} ms"],
-                textposition="top center",
-                showlegend=False,
-                hovertemplate=(
-                    f"体重{label}<br>推定null TI："
-                    "%{x:.0f} ms<extra></extra>"
-                ),
-            )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=[illustration_ti_ms],
-                y=[selected_blood_signals[label]],
-                mode="markers",
-                name=f"体重{label} 血液・イラスト表示TI",
-                marker={"color": colors[label], "size": 10, "symbol": "diamond-open"},
-                showlegend=False,
-                hovertemplate=(
-                    f"体重{label} 血液<br>イラスト表示TI：%{{x:.0f}} ms"
-                    "<br>相対信号：%{y:.1f}%<extra></extra>"
-                ),
-            )
-        )
-        figure.add_trace(
-            go.Scatter(
-                x=[illustration_ti_ms],
-                y=[selected_signals[label]],
-                mode="markers",
-                name=f"体重{label} イラスト表示TI",
-                marker={"color": colors[label], "size": 11, "symbol": "diamond"},
-                showlegend=False,
-                hovertemplate=(
-                    f"体重{label}<br>イラスト表示TI：%{{x:.0f}} ms"
-                    "<br>相対信号：%{y:.1f}%<extra></extra>"
-                ),
-            )
-        )
-        figure.add_vline(
-            x=result.corrected_null_ti_ms,
-            line_color=colors[label],
-            line_dash="dash",
-            line_width=1.5,
-        )
+    myocardial_color = "#1f77b4"
+    blood_color = "#555555"
+    figure.add_trace(go.Scatter(
+        x=result.ti_values_ms, y=result.signal_percent, mode="lines",
+        name=f"正常心筋（{result.weight_kg:.0f} kg）",
+        line={"color": myocardial_color, "width": 3},
+        hovertemplate="TI: %{x:.0f} ms<br>心筋相対信号: %{y:.1f}%<extra></extra>",
+    ))
+    figure.add_trace(go.Scatter(
+        x=result.ti_values_ms, y=result.blood_signal_percent, mode="lines",
+        name="血液", line={"color": blood_color, "width": 2.5, "dash": "dot"},
+        hovertemplate="TI: %{x:.0f} ms<br>血液相対信号: %{y:.1f}%<extra></extra>",
+    ))
+    figure.add_trace(go.Scatter(
+        x=[result.corrected_null_ti_ms], y=[0.0], mode="markers+text",
+        marker={"color": myocardial_color, "size": 10, "symbol": "circle"},
+        text=[f"心筋null：{result.corrected_null_ti_ms:.0f} ms"],
+        textposition="top center", showlegend=False,
+        hovertemplate="心筋null：%{x:.0f} ms<extra></extra>",
+    ))
+    figure.add_trace(go.Scatter(
+        x=[result.corrected_blood_null_ti_ms], y=[0.0], mode="markers+text",
+        marker={"color": blood_color, "size": 9, "symbol": "diamond-open"},
+        text=[f"血液null：{result.corrected_blood_null_ti_ms:.0f} ms"],
+        textposition="bottom center", showlegend=False,
+        hovertemplate="血液null：%{x:.0f} ms<extra></extra>",
+    ))
+    figure.add_trace(go.Scatter(
+        x=[illustration_ti_ms], y=[illustration_signal], mode="markers",
+        marker={"color": myocardial_color, "size": 11, "symbol": "diamond"},
+        showlegend=False,
+        hovertemplate="設定TI：%{x:.0f} ms<br>心筋相対信号：%{y:.1f}%<extra></extra>",
+    ))
+    figure.add_trace(go.Scatter(
+        x=[illustration_ti_ms], y=[illustration_blood_signal], mode="markers",
+        marker={"color": blood_color, "size": 10, "symbol": "diamond-open"},
+        showlegend=False,
+        hovertemplate="設定TI：%{x:.0f} ms<br>血液相対信号：%{y:.1f}%<extra></extra>",
+    ))
+    figure.add_vline(
+        x=result.corrected_null_ti_ms, line_color=myocardial_color,
+        line_dash="dash", line_width=1.5,
+    )
 
     figure.add_vline(
         x=illustration_ti_ms,
@@ -472,6 +609,102 @@ st.set_page_config(
 )
 initialize_state()
 
+st.markdown(
+    """
+<style>
+/* 入力項目名と数値を大きくし、各入力枠の高さをそろえる。 */
+div[data-testid="stNumberInput"] label p {
+    font-size: 1.08rem;
+    font-weight: 700;
+}
+div[data-testid="stNumberInput"] [data-baseweb="input"] {
+    min-height: 3.5rem;
+}
+div[data-testid="stNumberInput"] input {
+    font-size: 1.45rem;
+    font-weight: 700;
+}
+.psir-guide-wrap {
+    width: 100%;
+    overflow-x: auto;
+    margin: 0.4rem 0 0.8rem 0;
+}
+.psir-guide-table {
+    width: 100%;
+    min-width: 900px;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid #d9dde5;
+    border-radius: 0.6rem;
+    overflow: hidden;
+}
+.psir-guide-table th,
+.psir-guide-table td {
+    padding: 0.8rem 0.75rem;
+    text-align: center;
+    border-right: 1px solid #e1e4ea;
+    border-bottom: 1px solid #e1e4ea;
+    white-space: nowrap;
+}
+.psir-guide-table th {
+    background: #f3f5f8;
+    font-size: 1.15rem;
+    font-weight: 750;
+}
+.psir-guide-table td {
+    font-size: 1.22rem;
+    font-weight: 700;
+}
+.psir-guide-table th:first-child,
+.psir-guide-table td:first-child {
+    text-align: left;
+    font-weight: 750;
+}
+.psir-guide-table th:last-child,
+.psir-guide-table td:last-child {
+    border-right: 0;
+}
+.psir-guide-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+.null-ti-difference {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-top: 0.25rem;
+    padding: 0.45rem 0.8rem;
+    border-left: 4px solid #4f6fa8;
+    border-radius: 0.35rem;
+    background: #eef2f8;
+    color: #252a34;
+}
+.null-ti-difference span {
+    font-size: 0.95rem;
+    font-weight: 650;
+}
+.null-ti-difference strong {
+    font-size: 1.25rem;
+    line-height: 1.15;
+}
+.null-reference-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    margin-top: 0.25rem;
+}
+.null-reference-stack .null-ti-difference {
+    margin-top: 0;
+}
+.null-reference-stack small {
+    color: #5f6672;
+    font-size: 0.78rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 st.title("心臓MRI 正常心筋TI–信号強度シミュレータ")
 st.caption("3 T・ガドビスト分割投与モデル")
 st.info(
@@ -488,24 +721,21 @@ st.warning(
 st.button("初期値に戻す", on_click=reset_defaults)
 
 st.subheader("入力条件")
-input_columns = st.columns(6)
+st.caption(
+    "TI scoutおよびPSIRの撮像時刻は、インジェクターの2回目造影剤注入開始を"
+    "0分とした経過時間です。"
+)
+input_columns = st.columns(3)
 with input_columns[0]:
-    weight_a = st.number_input(
-        "比較体重A［kg］",
+    weight = st.number_input(
+        "設定体重［kg］",
         min_value=config.MIN_WEIGHT_KG,
         max_value=config.MAX_WEIGHT_KG,
         step=config.WEIGHT_STEP_KG,
-        key="weight_a",
+        key="weight",
+        format="%.0f",
     )
 with input_columns[1]:
-    weight_b = st.number_input(
-        "比較体重B［kg］",
-        min_value=config.MIN_WEIGHT_KG,
-        max_value=config.MAX_WEIGHT_KG,
-        step=config.WEIGHT_STEP_KG,
-        key="weight_b",
-    )
-with input_columns[2]:
     st.number_input(
         "TI scout撮像時刻［2回目注入後 min］",
         min_value=config.MIN_SCOUT_TIME_AFTER_SECOND_MIN,
@@ -514,7 +744,7 @@ with input_columns[2]:
         key="scout_time_after_second",
         format="%.1f",
     )
-with input_columns[3]:
+with input_columns[2]:
     st.number_input(
         "PSIR撮像開始時刻［2回目注入後 min］",
         min_value=config.MIN_PSIR_TIME_AFTER_SECOND_MIN,
@@ -523,26 +753,27 @@ with input_columns[3]:
         key="psir_time_after_second",
         format="%.1f",
     )
-with input_columns[4]:
-    st.number_input(
-        "正常心筋native T1［ms］",
-        min_value=config.MIN_NATIVE_T1_MS,
-        max_value=config.MAX_NATIVE_T1_MS,
-        step=config.NATIVE_T1_STEP_MS,
-        key="native_t1",
-        format="%.0f",
-    )
-with input_columns[5]:
-    st.number_input(
-        "血液native T1［ms］",
-        min_value=config.MIN_NATIVE_BLOOD_T1_MS,
-        max_value=config.MAX_NATIVE_BLOOD_T1_MS,
-        step=config.NATIVE_BLOOD_T1_STEP_MS,
-        key="native_blood_t1",
-        format="%.0f",
-    )
-
 with st.expander("詳細設定", expanded=False):
+    t1_columns = st.columns(2)
+    with t1_columns[0]:
+        st.number_input(
+            "正常心筋native T1［ms］",
+            min_value=config.MIN_NATIVE_T1_MS,
+            max_value=config.MAX_NATIVE_T1_MS,
+            step=config.NATIVE_T1_STEP_MS,
+            key="native_t1",
+            format="%.0f",
+        )
+    with t1_columns[1]:
+        st.number_input(
+            "血液native T1［ms］",
+            min_value=config.MIN_NATIVE_BLOOD_T1_MS,
+            max_value=config.MAX_NATIVE_BLOOD_T1_MS,
+            step=config.NATIVE_BLOOD_T1_STEP_MS,
+            key="native_blood_t1",
+            format="%.0f",
+        )
+
     detail_columns = st.columns(5)
     with detail_columns[0]:
         st.number_input("A_PK", step=0.00001, key="a_pk", format="%.5f")
@@ -628,36 +859,84 @@ if not math.isclose(
     st.warning("血液専用施設校正値が初期値から変更されています。")
 
 try:
-    result_a = calculate_display_result(weight_a)
-    result_b = calculate_display_result(weight_b)
-    illustration_signal_a = calculate_signal_at_ti(
-        result_a.corrected_null_ti_ms, st.session_state.illustration_ti
+    result = calculate_display_result(weight)
+    illustration_signal = calculate_signal_at_ti(
+        result.corrected_null_ti_ms, st.session_state.illustration_ti
     )
-    illustration_signal_b = calculate_signal_at_ti(
-        result_b.corrected_null_ti_ms, st.session_state.illustration_ti
-    )
-    illustration_blood_signal_a = calculate_signal_at_ti(
-        result_a.corrected_blood_null_ti_ms, st.session_state.illustration_ti
-    )
-    illustration_blood_signal_b = calculate_signal_at_ti(
-        result_b.corrected_blood_null_ti_ms, st.session_state.illustration_ti
+    illustration_blood_signal = calculate_signal_at_ti(
+        result.corrected_blood_null_ti_ms, st.session_state.illustration_ti
     )
 except ValueError as error:
     st.error(str(error))
     st.stop()
 
-st.subheader("主要結果")
-result_columns = st.columns(2)
-with result_columns[0]:
-    render_primary_result_column("A", result_a)
-with result_columns[1]:
-    render_primary_result_column("B", result_b)
+render_injection_table(result)
 
-null_difference_ms = abs(
-    result_a.corrected_null_ti_ms - result_b.corrected_null_ti_ms
-)
+display_columns = st.columns([1.65, 1.0], gap="large")
+with display_columns[0]:
+    render_signal_graph(
+        result,
+        st.session_state.illustration_ti,
+        illustration_signal,
+        illustration_blood_signal,
+    )
+
+with display_columns[1]:
+    st.subheader("左室短軸像")
+    illustration_control_columns = st.columns([1, 1, 1.4, 1, 1])
+    with illustration_control_columns[0]:
+        st.button(
+            f"← {config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f}",
+            on_click=decrease_illustration_ti_30,
+            disabled=(
+                st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
+            ),
+            width="stretch",
+        )
+    with illustration_control_columns[1]:
+        st.button(
+            f"← {config.ILLUSTRATION_TI_STEP_MS:.0f}",
+            on_click=decrease_illustration_ti,
+            disabled=(
+                st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
+            ),
+            width="stretch",
+        )
+    with illustration_control_columns[2]:
+        st.markdown(
+            f"<h3 style='text-align:center;margin-top:0.2rem'>"
+            f"TI：{st.session_state.illustration_ti:.0f} ms</h3>",
+            unsafe_allow_html=True,
+        )
+    with illustration_control_columns[3]:
+        st.button(
+            f"{config.ILLUSTRATION_TI_STEP_MS:.0f} →",
+            on_click=increase_illustration_ti,
+            disabled=(
+                st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
+            ),
+            width="stretch",
+        )
+    with illustration_control_columns[4]:
+        st.button(
+            f"{config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f} →",
+            on_click=increase_illustration_ti_30,
+            disabled=(
+                st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
+            ),
+            width="stretch",
+        )
+
+    render_illustration_column(
+        result,
+        st.session_state.illustration_ti,
+        illustration_signal,
+        illustration_blood_signal,
+    )
+
+st.subheader("主要結果")
+render_primary_result(result)
 st.caption(
-    f"体重AとBのnull TI差：{null_difference_ms:.0f} ms ／ "
     f"TI scout：2回目注入後{st.session_state.scout_time_after_second:.1f} min ／ "
     f"TI scout：1回目注入後"
     f"{st.session_state.scout_time_after_second + config.SECOND_INJECTION_TIME_MIN:.1f} min ／ "
@@ -667,95 +946,10 @@ st.caption(
     f"心筋native T1：{st.session_state.native_t1:.0f} ms ／ "
     f"血液native T1：{st.session_state.native_blood_t1:.0f} ms ／ 磁場強度：3 T"
 )
+render_psir_ti_guide(result)
 
-if math.isclose(
-    result_a.dose.total_dose_mmol_per_kg,
-    result_b.dose.total_dose_mmol_per_kg,
-):
-    st.info(
-        "現在の条件では、体重Aと体重Bの体重当たり総投与量が同一であるため、"
-        "2本の曲線は重なっています。"
-    )
-
-render_signal_graph(
-    result_a,
-    result_b,
-    st.session_state.illustration_ti,
-    illustration_signal_a,
-    illustration_signal_b,
-    illustration_blood_signal_a,
-    illustration_blood_signal_b,
-)
-
-illustration_control_columns = st.columns([1, 1, 1.4, 1, 1])
-with illustration_control_columns[0]:
-    st.button(
-        f"← {config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f} ms",
-        on_click=decrease_illustration_ti_30,
-        disabled=(
-            st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
-        ),
-        width="stretch",
-    )
-with illustration_control_columns[1]:
-    st.button(
-        f"← {config.ILLUSTRATION_TI_STEP_MS:.0f} ms",
-        on_click=decrease_illustration_ti,
-        disabled=(
-            st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
-        ),
-        width="stretch",
-    )
-with illustration_control_columns[2]:
-    st.markdown(
-        f"<h3 style='text-align:center'>表示TI："
-        f"{st.session_state.illustration_ti:.0f} ms</h3>",
-        unsafe_allow_html=True,
-    )
-with illustration_control_columns[3]:
-    st.button(
-        f"{config.ILLUSTRATION_TI_STEP_MS:.0f} ms →",
-        on_click=increase_illustration_ti,
-        disabled=(
-            st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
-        ),
-        width="stretch",
-    )
-with illustration_control_columns[4]:
-    st.button(
-        f"{config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f} ms →",
-        on_click=increase_illustration_ti_30,
-        disabled=(
-            st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
-        ),
-        width="stretch",
-    )
-
-st.subheader("左室短軸イラスト")
-illustration_columns = st.columns(2)
-with illustration_columns[0]:
-    render_illustration_column(
-        "A",
-        result_a,
-        st.session_state.illustration_ti,
-        illustration_signal_a,
-        illustration_blood_signal_a,
-    )
-with illustration_columns[1]:
-    render_illustration_column(
-        "B",
-        result_b,
-        st.session_state.illustration_ti,
-        illustration_signal_b,
-        illustration_blood_signal_b,
-    )
-
-st.subheader("計算詳細")
-detail_columns = st.columns(2)
-with detail_columns[0]:
-    render_detail_column("A", result_a)
-with detail_columns[1]:
-    render_detail_column("B", result_b)
+with st.expander("計算詳細", expanded=False):
+    render_detail(result)
 
 with st.expander("自施設の投与プロトコル"):
     protocol = pd.DataFrame(

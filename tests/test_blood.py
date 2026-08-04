@@ -63,9 +63,9 @@ def test_myocardial_configuration_is_unchanged_and_independent():
 @pytest.mark.parametrize(
     ("weight", "expected_concentration", "expected_t1", "expected_null"),
     [
-        (50.0, 0.910, 196.0, 136.0),
-        (55.0, 0.825, 214.0, 148.0),
-        (70.0, 0.641, 266.0, 184.0),
+        (50.0, 0.885, 201.0, 139.0),
+        (55.0, 0.802, 219.0, 152.0),
+        (70.0, 0.625, 272.0, 188.0),
     ],
 )
 def test_section_28_reference_values(

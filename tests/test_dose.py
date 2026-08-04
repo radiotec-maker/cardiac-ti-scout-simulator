@@ -17,8 +17,9 @@ from model import (
     ("weight", "first", "second", "total", "dose_per_kg"),
     [
         (30.0, 1.5, 4.5, 6.0, 0.200),
+        (45.0, 2.3, 6.7, 9.0, 0.200),
         (50.0, 2.5, 7.5, 10.0, 0.200),
-        (55.0, 2.75, 7.25, 10.0, 10.0 / 55.0),
+        (55.0, 2.8, 7.2, 10.0, 10.0 / 55.0),
         (70.0, 3.5, 6.5, 10.0, 10.0 / 70.0),
         (100.0, 5.0, 5.0, 10.0, 0.100),
     ],
@@ -41,6 +42,13 @@ def test_volume_limit_and_nonnegative_second_dose(weight):
 @pytest.mark.parametrize("weight", [30.0, 40.0, 50.0])
 def test_low_weight_total_dose_is_target(weight):
     assert calculate_dose(weight).total_dose_mmol_per_kg == pytest.approx(0.20)
+
+
+def test_first_injection_is_rounded_up_to_injector_step():
+    result = calculate_dose(45.0)
+    assert result.first_volume_ml == pytest.approx(2.3)
+    assert result.second_volume_ml == pytest.approx(6.7)
+    assert result.total_dose_mmol_per_kg == pytest.approx(0.20)
 
 
 def test_injection_durations():
@@ -67,7 +75,7 @@ def test_invalid_native_t1(invalid):
         validate_native_t1(invalid)
 
 
-@pytest.mark.parametrize("invalid", [1.9, 15.1])
+@pytest.mark.parametrize("invalid", [1.9, 16.6])
 def test_invalid_scout_time(invalid):
     with pytest.raises(ValueError, match="TI scout撮像時刻"):
         validate_scout_time(invalid)
