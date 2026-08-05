@@ -614,8 +614,11 @@ def render_signal_graph(
         title="TI scoutにおける正常心筋・血液Magnitude信号曲線",
         xaxis_title="Inversion Time（TI）［ms］",
         yaxis_title="正規化Magnitude信号［%］",
-        xaxis={"range": [st.session_state.ti_min, st.session_state.ti_max]},
-        yaxis={"range": [0, 100]},
+        xaxis={
+            "range": [st.session_state.ti_min, st.session_state.ti_max],
+            "fixedrange": True,
+        },
+        yaxis={"range": [0, 100], "fixedrange": True},
         hovermode="x unified",
         clickmode="event+select",
         dragmode=False,
