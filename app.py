@@ -246,16 +246,13 @@ def calculate_display_result(weight_kg: float) -> DisplayResult:
 def render_primary_result(result: DisplayResult) -> None:
     """設定体重の主要結果を表示する。"""
 
-    st.subheader(f"設定体重：{result.weight_kg:.0f} kg")
-    columns = st.columns(4)
+    st.caption(f"設定体重 {result.weight_kg:.0f} kgで計算した推定値です。")
+    columns = st.columns(3)
     columns[0].metric(
-        "総投与量", f"{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg"
-    )
-    columns[1].metric(
         f"TI scout {st.session_state.scout_time_after_second:.1f}分後の予想心筋null TI",
         f"{result.corrected_null_ti_ms:.0f} ms",
     )
-    columns[2].metric(
+    columns[1].metric(
         f"TI scout {st.session_state.scout_time_after_second:.1f}分後の予想血液null TI",
         f"{result.corrected_blood_null_ti_ms:.0f} ms",
     )
@@ -265,7 +262,7 @@ def render_primary_result(result: DisplayResult) -> None:
     psir_myo_blood_difference = (
         result.psir_corrected_null_ti_ms - result.corrected_blood_null_ti_ms
     )
-    columns[2].markdown(
+    columns[1].markdown(
         '<div class="null-reference-stack">'
         '<div class="null-ti-difference">'
         '<span>TI scout正常心筋null TIとの差</span>'
@@ -279,11 +276,11 @@ def render_primary_result(result: DisplayResult) -> None:
         '</div>',
         unsafe_allow_html=True,
     )
-    columns[3].metric(
+    columns[2].metric(
         f"PSIR {st.session_state.psir_time_after_second:.1f}分後の予想心筋null TI",
         f"{result.psir_corrected_null_ti_ms:.0f} ms",
     )
-    columns[3].markdown(
+    columns[2].markdown(
         '<div class="null-ti-difference">'
         '<span>TI scout正常心筋null TIとの差</span>'
         f'<strong>{result.null_ti_change_ms:+.0f} ms</strong>'
@@ -363,14 +360,13 @@ def render_injection_table(result: DisplayResult) -> None:
         f"設定体重 {result.weight_kg:.0f} kg に対するインジェクター設定値です。"
         "体重を変更すると自動的に再計算されます。"
     )
-    dose_columns = st.columns(3)
-    dose_columns[0].metric(
+    st.metric(
         "1回目（perfusion）", f"{result.dose.first_volume_ml:.1f} mL"
     )
-    dose_columns[1].metric(
+    st.metric(
         "2回目（追加注入）", f"{result.dose.second_volume_ml:.1f} mL"
     )
-    dose_columns[2].metric(
+    st.metric(
         f"実投与量（目標 {config.TARGET_TOTAL_DOSE_MMOL_PER_KG:.3f} mmol/kg）",
         f"{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg",
     )
@@ -640,6 +636,209 @@ def render_signal_graph(
     )
 
 
+def render_input_panel() -> float:
+    """左側の操作パネルへ通常入力と詳細設定を縦に表示する。"""
+
+    st.subheader("入力条件")
+    st.caption(
+        "撮像時刻はインジェクターの2回目造影剤注入開始を0分とした"
+        "経過時間です。"
+    )
+    weight = st.number_input(
+        "設定体重［kg］",
+        min_value=config.MIN_WEIGHT_KG,
+        max_value=config.MAX_WEIGHT_KG,
+        step=config.WEIGHT_STEP_KG,
+        key="weight",
+        format="%.0f",
+    )
+    st.number_input(
+        "TI scout撮像時刻［2回目注入後 min］",
+        min_value=config.MIN_SCOUT_TIME_AFTER_SECOND_MIN,
+        max_value=config.MAX_SCOUT_TIME_AFTER_SECOND_MIN,
+        step=config.SCOUT_TIME_AFTER_SECOND_STEP_MIN,
+        key="scout_time_after_second",
+        format="%.1f",
+    )
+    st.number_input(
+        "PSIR撮像開始時刻［2回目注入後 min］",
+        min_value=config.MIN_PSIR_TIME_AFTER_SECOND_MIN,
+        max_value=config.MAX_PSIR_TIME_AFTER_SECOND_MIN,
+        step=config.PSIR_TIME_AFTER_SECOND_STEP_MIN,
+        key="psir_time_after_second",
+        format="%.1f",
+    )
+
+    with st.expander("詳細設定", expanded=False):
+        st.number_input(
+            "正常心筋native T1［ms］",
+            min_value=config.MIN_NATIVE_T1_MS,
+            max_value=config.MAX_NATIVE_T1_MS,
+            step=config.NATIVE_T1_STEP_MS,
+            key="native_t1",
+            format="%.0f",
+        )
+        st.number_input(
+            "血液native T1［ms］",
+            min_value=config.MIN_NATIVE_BLOOD_T1_MS,
+            max_value=config.MAX_NATIVE_BLOOD_T1_MS,
+            step=config.NATIVE_BLOOD_T1_STEP_MS,
+            key="native_blood_t1",
+            format="%.0f",
+        )
+        st.number_input("A_PK", step=0.00001, key="a_pk", format="%.5f")
+        st.number_input(
+            "k［min⁻¹］", step=0.000001, key="washout_rate", format="%.6f"
+        )
+        st.number_input(
+            "r1［mM⁻¹s⁻¹］", step=0.1, key="relaxivity", format="%.1f"
+        )
+        st.number_input(
+            "施設校正値［ms］", step=1.0, key="facility_offset", format="%.0f"
+        )
+        st.number_input("TI表示最小値［ms］", step=1.0, key="ti_min")
+        st.number_input("TI表示最大値［ms］", step=1.0, key="ti_max")
+        st.number_input("TI計算刻み［ms］", step=1.0, key="ti_step")
+        st.write(f"2回目注入時刻（固定）：{config.SECOND_INJECTION_TIME_MIN:.1f} min")
+        st.number_input("A_blood", step=0.00001, key="a_blood", format="%.5f")
+        st.number_input(
+            "k_blood［min⁻¹］",
+            step=0.00001,
+            key="blood_washout_rate",
+            format="%.5f",
+        )
+        st.number_input(
+            "r1_blood［mM⁻¹s⁻¹］",
+            step=0.1,
+            key="blood_relaxivity",
+            format="%.1f",
+        )
+        st.number_input(
+            "血液専用施設校正値［ms］",
+            min_value=config.MIN_BLOOD_FACILITY_OFFSET_MS,
+            max_value=config.MAX_BLOOD_FACILITY_OFFSET_MS,
+            step=config.BLOOD_FACILITY_OFFSET_STEP_MS,
+            key="blood_facility_offset",
+            format="%.0f",
+        )
+
+    reference_changed = any(
+        not math.isclose(current, default)
+        for current, default in (
+            (st.session_state.a_pk, config.DEFAULT_A_PK),
+            (st.session_state.washout_rate, config.DEFAULT_WASHOUT_RATE_PER_MIN),
+            (st.session_state.relaxivity, config.DEFAULT_RELAXIVITY_PER_MMOL_L_S),
+        )
+    )
+    if reference_changed:
+        st.warning("文献参照モデルの係数が初期値から変更されています。")
+
+    blood_reference_changed = any(
+        not math.isclose(current, default)
+        for current, default in (
+            (st.session_state.a_blood, config.DEFAULT_A_BLOOD),
+            (
+                st.session_state.blood_washout_rate,
+                config.DEFAULT_BLOOD_WASHOUT_RATE_PER_MIN,
+            ),
+            (
+                st.session_state.blood_relaxivity,
+                config.DEFAULT_BLOOD_RELAXIVITY_PER_MMOL_L_S,
+            ),
+        )
+    )
+    if blood_reference_changed:
+        st.warning("血液参照モデルの係数が初期値から変更されています。")
+    if not math.isclose(
+        st.session_state.facility_offset, config.DEFAULT_FACILITY_OFFSET_MS
+    ):
+        st.warning("施設校正値が初期値から変更されています。")
+    if not math.isclose(
+        st.session_state.blood_facility_offset,
+        config.DEFAULT_BLOOD_FACILITY_OFFSET_MS,
+    ):
+        st.warning("血液専用施設校正値が初期値から変更されています。")
+
+    return float(weight)
+
+
+def render_result_workspace(
+    result: DisplayResult,
+    illustration_signal: float,
+    illustration_blood_signal: float,
+) -> None:
+    """右側へ信号曲線、短軸像、主要結果、PSIR目安をまとめて表示する。"""
+
+    display_columns = st.columns([1.65, 0.9], gap="medium")
+    with display_columns[0]:
+        render_signal_graph(
+            result,
+            st.session_state.illustration_ti,
+            illustration_signal,
+            illustration_blood_signal,
+        )
+
+    with display_columns[1]:
+        st.subheader("左室短軸像")
+        st.markdown(
+            f"<h3 style='text-align:center;margin:0.15rem 0 0.55rem'>"
+            f"表示TI：{st.session_state.illustration_ti:.0f} ms</h3>",
+            unsafe_allow_html=True,
+        )
+        illustration_control_columns = st.columns(4, gap="small")
+        with illustration_control_columns[0]:
+            st.button(
+                f"−{config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f}",
+                on_click=decrease_illustration_ti_30,
+                disabled=(
+                    st.session_state.illustration_ti
+                    <= config.MIN_ILLUSTRATION_TI_MS
+                ),
+                width="stretch",
+            )
+        with illustration_control_columns[1]:
+            st.button(
+                f"−{config.ILLUSTRATION_TI_STEP_MS:.0f}",
+                on_click=decrease_illustration_ti,
+                disabled=(
+                    st.session_state.illustration_ti
+                    <= config.MIN_ILLUSTRATION_TI_MS
+                ),
+                width="stretch",
+            )
+        with illustration_control_columns[2]:
+            st.button(
+                f"+{config.ILLUSTRATION_TI_STEP_MS:.0f}",
+                on_click=increase_illustration_ti,
+                disabled=(
+                    st.session_state.illustration_ti
+                    >= config.MAX_ILLUSTRATION_TI_MS
+                ),
+                width="stretch",
+            )
+        with illustration_control_columns[3]:
+            st.button(
+                f"+{config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f}",
+                on_click=increase_illustration_ti_30,
+                disabled=(
+                    st.session_state.illustration_ti
+                    >= config.MAX_ILLUSTRATION_TI_MS
+                ),
+                width="stretch",
+            )
+
+        render_illustration_column(
+            result,
+            st.session_state.illustration_ti,
+            illustration_signal,
+            illustration_blood_signal,
+        )
+
+    st.subheader("TI scout・PSIR推定結果")
+    render_primary_result(result)
+    render_psir_ti_guide(result)
+
+
 st.set_page_config(
     page_title="心臓MRI 正常心筋TI–信号強度シミュレータ",
     layout="wide",
@@ -757,143 +956,9 @@ st.warning(
 
 st.button("初期値に戻す", on_click=reset_defaults)
 
-st.subheader("入力条件")
-st.caption(
-    "TI scoutおよびPSIRの撮像時刻は、インジェクターの2回目造影剤注入開始を"
-    "0分とした経過時間です。"
-)
-input_columns = st.columns(3)
-with input_columns[0]:
-    weight = st.number_input(
-        "設定体重［kg］",
-        min_value=config.MIN_WEIGHT_KG,
-        max_value=config.MAX_WEIGHT_KG,
-        step=config.WEIGHT_STEP_KG,
-        key="weight",
-        format="%.0f",
-    )
-with input_columns[1]:
-    st.number_input(
-        "TI scout撮像時刻［2回目注入後 min］",
-        min_value=config.MIN_SCOUT_TIME_AFTER_SECOND_MIN,
-        max_value=config.MAX_SCOUT_TIME_AFTER_SECOND_MIN,
-        step=config.SCOUT_TIME_AFTER_SECOND_STEP_MIN,
-        key="scout_time_after_second",
-        format="%.1f",
-    )
-with input_columns[2]:
-    st.number_input(
-        "PSIR撮像開始時刻［2回目注入後 min］",
-        min_value=config.MIN_PSIR_TIME_AFTER_SECOND_MIN,
-        max_value=config.MAX_PSIR_TIME_AFTER_SECOND_MIN,
-        step=config.PSIR_TIME_AFTER_SECOND_STEP_MIN,
-        key="psir_time_after_second",
-        format="%.1f",
-    )
-with st.expander("詳細設定", expanded=False):
-    t1_columns = st.columns(2)
-    with t1_columns[0]:
-        st.number_input(
-            "正常心筋native T1［ms］",
-            min_value=config.MIN_NATIVE_T1_MS,
-            max_value=config.MAX_NATIVE_T1_MS,
-            step=config.NATIVE_T1_STEP_MS,
-            key="native_t1",
-            format="%.0f",
-        )
-    with t1_columns[1]:
-        st.number_input(
-            "血液native T1［ms］",
-            min_value=config.MIN_NATIVE_BLOOD_T1_MS,
-            max_value=config.MAX_NATIVE_BLOOD_T1_MS,
-            step=config.NATIVE_BLOOD_T1_STEP_MS,
-            key="native_blood_t1",
-            format="%.0f",
-        )
-
-    detail_columns = st.columns(5)
-    with detail_columns[0]:
-        st.number_input("A_PK", step=0.00001, key="a_pk", format="%.5f")
-        st.number_input(
-            "k［min⁻¹］", step=0.000001, key="washout_rate", format="%.6f"
-        )
-    with detail_columns[1]:
-        st.number_input(
-            "r1［mM⁻¹s⁻¹］", step=0.1, key="relaxivity", format="%.1f"
-        )
-        st.number_input(
-            "施設校正値［ms］", step=1.0, key="facility_offset", format="%.0f"
-        )
-    with detail_columns[2]:
-        st.number_input("TI表示最小値［ms］", step=1.0, key="ti_min")
-        st.number_input("TI表示最大値［ms］", step=1.0, key="ti_max")
-    with detail_columns[3]:
-        st.number_input("TI計算刻み［ms］", step=1.0, key="ti_step")
-        st.write(f"2回目注入時刻（固定）：{config.SECOND_INJECTION_TIME_MIN:.1f} min")
-    with detail_columns[4]:
-        st.number_input("A_blood", step=0.00001, key="a_blood", format="%.5f")
-        st.number_input(
-            "k_blood［min⁻¹］",
-            step=0.00001,
-            key="blood_washout_rate",
-            format="%.5f",
-        )
-        st.number_input(
-            "r1_blood［mM⁻¹s⁻¹］",
-            step=0.1,
-            key="blood_relaxivity",
-            format="%.1f",
-        )
-        st.number_input(
-            "血液専用施設校正値［ms］",
-            min_value=config.MIN_BLOOD_FACILITY_OFFSET_MS,
-            max_value=config.MAX_BLOOD_FACILITY_OFFSET_MS,
-            step=config.BLOOD_FACILITY_OFFSET_STEP_MS,
-            key="blood_facility_offset",
-            format="%.0f",
-        )
-
-reference_changed = any(
-    not math.isclose(current, default)
-    for current, default in (
-        (st.session_state.a_pk, config.DEFAULT_A_PK),
-        (st.session_state.washout_rate, config.DEFAULT_WASHOUT_RATE_PER_MIN),
-        (st.session_state.relaxivity, config.DEFAULT_RELAXIVITY_PER_MMOL_L_S),
-    )
-)
-if reference_changed:
-    st.warning(
-        "文献参照モデルの係数が初期値から変更されています。"
-        "表示結果は初版の基準モデルとは異なります。"
-    )
-blood_reference_changed = any(
-    not math.isclose(current, default)
-    for current, default in (
-        (st.session_state.a_blood, config.DEFAULT_A_BLOOD),
-        (
-            st.session_state.blood_washout_rate,
-            config.DEFAULT_BLOOD_WASHOUT_RATE_PER_MIN,
-        ),
-        (
-            st.session_state.blood_relaxivity,
-            config.DEFAULT_BLOOD_RELAXIVITY_PER_MMOL_L_S,
-        ),
-    )
-)
-if blood_reference_changed:
-    st.warning("血液参照モデルの係数が初期値から変更されています。")
-if not math.isclose(
-    st.session_state.facility_offset, config.DEFAULT_FACILITY_OFFSET_MS
-):
-    st.warning(
-        "施設校正値が初期値から変更されています。推定null TIおよび"
-        "信号曲線に変更が反映されています。"
-    )
-if not math.isclose(
-    st.session_state.blood_facility_offset,
-    config.DEFAULT_BLOOD_FACILITY_OFFSET_MS,
-):
-    st.warning("血液専用施設校正値が初期値から変更されています。")
+workspace_columns = st.columns([0.78, 2.22], gap="large")
+with workspace_columns[0]:
+    weight = render_input_panel()
 
 try:
     result = calculate_display_result(weight)
@@ -907,83 +972,15 @@ except ValueError as error:
     st.error(str(error))
     st.stop()
 
-render_injection_table(result)
+with workspace_columns[0]:
+    render_injection_table(result)
 
-display_columns = st.columns([1.65, 1.0], gap="large")
-with display_columns[0]:
-    render_signal_graph(
+with workspace_columns[1]:
+    render_result_workspace(
         result,
-        st.session_state.illustration_ti,
         illustration_signal,
         illustration_blood_signal,
     )
-
-with display_columns[1]:
-    st.subheader("左室短軸像")
-    illustration_control_columns = st.columns([1, 1, 1.4, 1, 1])
-    with illustration_control_columns[0]:
-        st.button(
-            f"← {config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f}",
-            on_click=decrease_illustration_ti_30,
-            disabled=(
-                st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
-            ),
-            width="stretch",
-        )
-    with illustration_control_columns[1]:
-        st.button(
-            f"← {config.ILLUSTRATION_TI_STEP_MS:.0f}",
-            on_click=decrease_illustration_ti,
-            disabled=(
-                st.session_state.illustration_ti <= config.MIN_ILLUSTRATION_TI_MS
-            ),
-            width="stretch",
-        )
-    with illustration_control_columns[2]:
-        st.markdown(
-            f"<h3 style='text-align:center;margin-top:0.2rem'>"
-            f"TI：{st.session_state.illustration_ti:.0f} ms</h3>",
-            unsafe_allow_html=True,
-        )
-    with illustration_control_columns[3]:
-        st.button(
-            f"{config.ILLUSTRATION_TI_STEP_MS:.0f} →",
-            on_click=increase_illustration_ti,
-            disabled=(
-                st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
-            ),
-            width="stretch",
-        )
-    with illustration_control_columns[4]:
-        st.button(
-            f"{config.ILLUSTRATION_TI_LARGE_STEP_MS:.0f} →",
-            on_click=increase_illustration_ti_30,
-            disabled=(
-                st.session_state.illustration_ti >= config.MAX_ILLUSTRATION_TI_MS
-            ),
-            width="stretch",
-        )
-
-    render_illustration_column(
-        result,
-        st.session_state.illustration_ti,
-        illustration_signal,
-        illustration_blood_signal,
-    )
-
-st.subheader("主要結果")
-render_primary_result(result)
-st.caption(
-    f"TI scout：2回目注入後{st.session_state.scout_time_after_second:.1f} min ／ "
-    f"TI scout：1回目注入後"
-    f"{st.session_state.scout_time_after_second + config.SECOND_INJECTION_TIME_MIN:.1f} min ／ "
-    f"PSIR開始：2回目注入後{st.session_state.psir_time_after_second:.1f} min ／ "
-    f"PSIR開始：1回目注入後"
-    f"{st.session_state.psir_time_after_second + config.SECOND_INJECTION_TIME_MIN:.1f} min ／ "
-    f"心筋native T1：{st.session_state.native_t1:.0f} ms ／ "
-    f"血液native T1：{st.session_state.native_blood_t1:.0f} ms ／ 磁場強度：3 T"
-)
-render_psir_ti_guide(result)
 
 with st.expander("計算詳細", expanded=False):
     render_detail(result)
