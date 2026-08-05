@@ -256,34 +256,23 @@ def render_primary_result(result: DisplayResult) -> None:
         f"TI scout {st.session_state.scout_time_after_second:.1f}分後の予想血液null TI",
         f"{result.corrected_blood_null_ti_ms:.0f} ms",
     )
-    scout_myo_blood_difference = (
-        result.corrected_null_ti_ms - result.corrected_blood_null_ti_ms
-    )
     psir_myo_blood_difference = (
         result.psir_corrected_null_ti_ms - result.corrected_blood_null_ti_ms
-    )
-    columns[1].markdown(
-        '<div class="null-reference-stack">'
-        '<div class="null-ti-difference">'
-        '<span>TI scout正常心筋null TIとの差</span>'
-        f'<strong>{scout_myo_blood_difference:+.0f} ms</strong>'
-        '</div>'
-        '<div class="null-ti-difference">'
-        '<span>PSIR正常心筋null TIとの差</span>'
-        f'<strong>{psir_myo_blood_difference:+.0f} ms</strong>'
-        '</div>'
-        '<small>参考値：心筋null TI − TI scout血液null TI</small>'
-        '</div>',
-        unsafe_allow_html=True,
     )
     columns[2].metric(
         f"PSIR {st.session_state.psir_time_after_second:.1f}分後の予想心筋null TI",
         f"{result.psir_corrected_null_ti_ms:.0f} ms",
     )
     columns[2].markdown(
+        '<div class="null-reference-stack">'
         '<div class="null-ti-difference">'
         '<span>TI scout正常心筋null TIとの差</span>'
         f'<strong>{result.null_ti_change_ms:+.0f} ms</strong>'
+        '</div>'
+        '<div class="null-ti-difference">'
+        '<span>TI scout血液null TIとの差</span>'
+        f'<strong>{psir_myo_blood_difference:+.0f} ms</strong>'
+        '</div>'
         '</div>',
         unsafe_allow_html=True,
     )
