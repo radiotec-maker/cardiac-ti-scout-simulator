@@ -841,7 +841,10 @@ def render_result_workspace(
             illustration_signal,
             illustration_blood_signal,
         )
-        st.subheader("左室短軸像")
+        st.markdown(
+            "<h3 style='text-align:center;margin:0.3rem 0 0'>左室短軸像</h3>",
+            unsafe_allow_html=True,
+        )
 
     st.subheader("TI scout・PSIR推定結果")
     render_primary_result(result)
