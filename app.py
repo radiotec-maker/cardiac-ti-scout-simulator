@@ -270,7 +270,7 @@ def render_primary_result(result: DisplayResult) -> None:
         f'<strong>{result.null_ti_change_ms:+.0f} ms</strong>'
         '</div>'
         '<div class="null-ti-difference">'
-        '<span>TI scout血液null TIとの差</span>'
+        '<span>TI scout血液null TIとの差（PSIR正常心筋との差）</span>'
         f'<strong>{psir_myo_blood_difference:+.0f} ms</strong>'
         '</div>'
         '</div>',
