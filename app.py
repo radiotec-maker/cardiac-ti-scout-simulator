@@ -256,6 +256,9 @@ def render_primary_result(result: DisplayResult) -> None:
         f"TI scout {st.session_state.scout_time_after_second:.1f}分後の予想血液null TI",
         f"{result.corrected_blood_null_ti_ms:.0f} ms",
     )
+    scout_myo_blood_difference = (
+        result.corrected_null_ti_ms - result.corrected_blood_null_ti_ms
+    )
     psir_myo_blood_difference = (
         result.psir_corrected_null_ti_ms - result.corrected_blood_null_ti_ms
     )
@@ -270,8 +273,9 @@ def render_primary_result(result: DisplayResult) -> None:
         f'<strong>{result.null_ti_change_ms:+.0f} ms</strong>'
         '</div>'
         '<div class="null-ti-difference">'
-        '<span>TI scout血液null TIとの差（PSIR正常心筋との差）</span>'
+        '<span>TI scout血液null TIとの差</span>'
         f'<strong>{psir_myo_blood_difference:+.0f} ms</strong>'
+        f'<small>（TI scout正常心筋との差：{scout_myo_blood_difference:+.0f} ms）</small>'
         '</div>'
         '</div>',
         unsafe_allow_html=True,
