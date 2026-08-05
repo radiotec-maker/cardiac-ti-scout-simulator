@@ -618,11 +618,15 @@ def render_signal_graph(
         yaxis={"range": [0, 100]},
         hovermode="x unified",
         clickmode="event+select",
+        dragmode=False,
         hoverdistance=30,
         legend={"orientation": "h", "y": 1.02, "x": 0.0},
         margin={"l": 50, "r": 30, "t": 90, "b": 50},
     )
-    st.caption("心筋または血液の曲線上をクリックすると、そのTIへ短軸像が連動します。")
+    st.caption(
+        "曲線上のクリック、または下のTIスライダーのドラッグで、"
+        "点線と左室短軸像が連動します。"
+    )
     st.plotly_chart(
         figure,
         width="stretch",
@@ -632,6 +636,7 @@ def render_signal_graph(
         config={
             "scrollZoom": False,
             "displaylogo": False,
+            "modeBarButtonsToRemove": ["pan2d"],
         },
     )
 
@@ -776,6 +781,14 @@ def render_result_workspace(
             st.session_state.illustration_ti,
             illustration_signal,
             illustration_blood_signal,
+        )
+        st.slider(
+            "イラスト表示TI（ドラッグ操作）［ms］",
+            min_value=float(config.MIN_ILLUSTRATION_TI_MS),
+            max_value=float(config.MAX_ILLUSTRATION_TI_MS),
+            step=float(config.DEFAULT_TI_STEP_MS),
+            key="illustration_ti",
+            format="%.0f ms",
         )
 
     with display_columns[1]:
