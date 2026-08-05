@@ -128,6 +128,28 @@ def increase_illustration_ti_30() -> None:
         )
 
 
+def update_illustration_ti_from_chart() -> None:
+    """信号曲線でクリック選択されたTIを短軸像の表示TIへ反映する。"""
+
+    chart_state = st.session_state.get("signal_curve_chart")
+    if not chart_state:
+        return
+
+    try:
+        selected_points = chart_state.selection.points
+    except (AttributeError, KeyError, TypeError):
+        selected_points = chart_state.get("selection", {}).get("points", [])
+
+    if not selected_points:
+        return
+
+    selected_ti_ms = float(selected_points[-1]["x"])
+    st.session_state.illustration_ti = min(
+        max(selected_ti_ms, config.MIN_ILLUSTRATION_TI_MS),
+        config.MAX_ILLUSTRATION_TI_MS,
+    )
+
+
 def calculate_display_result(weight_kg: float) -> DisplayResult:
     """既存モデルを両撮像時刻へ適用し、1体重分の表示結果を計算する。"""
 
@@ -540,14 +562,16 @@ def render_signal_graph(
     myocardial_color = "#1f77b4"
     blood_color = "#555555"
     figure.add_trace(go.Scatter(
-        x=result.ti_values_ms, y=result.signal_percent, mode="lines",
+        x=result.ti_values_ms, y=result.signal_percent, mode="lines+markers",
         name=f"正常心筋（{result.weight_kg:.0f} kg）",
         line={"color": myocardial_color, "width": 3},
+        marker={"color": myocardial_color, "size": 9, "opacity": 0.01},
         hovertemplate="TI: %{x:.0f} ms<br>心筋相対信号: %{y:.1f}%<extra></extra>",
     ))
     figure.add_trace(go.Scatter(
-        x=result.ti_values_ms, y=result.blood_signal_percent, mode="lines",
+        x=result.ti_values_ms, y=result.blood_signal_percent, mode="lines+markers",
         name="血液", line={"color": blood_color, "width": 2.5, "dash": "dot"},
+        marker={"color": blood_color, "size": 9, "opacity": 0.01},
         hovertemplate="TI: %{x:.0f} ms<br>血液相対信号: %{y:.1f}%<extra></extra>",
     ))
     figure.add_trace(go.Scatter(
@@ -597,10 +621,23 @@ def render_signal_graph(
         xaxis={"range": [st.session_state.ti_min, st.session_state.ti_max]},
         yaxis={"range": [0, 100]},
         hovermode="x unified",
+        clickmode="event+select",
+        hoverdistance=30,
         legend={"orientation": "h", "y": 1.02, "x": 0.0},
         margin={"l": 50, "r": 30, "t": 90, "b": 50},
     )
-    st.plotly_chart(figure, width="stretch")
+    st.caption("心筋または血液の曲線上をクリックすると、そのTIへ短軸像が連動します。")
+    st.plotly_chart(
+        figure,
+        width="stretch",
+        key="signal_curve_chart",
+        on_select=update_illustration_ti_from_chart,
+        selection_mode="points",
+        config={
+            "scrollZoom": False,
+            "displaylogo": False,
+        },
+    )
 
 
 st.set_page_config(
