@@ -391,43 +391,6 @@ def render_injection_table(result: DisplayResult) -> None:
         st.dataframe(injection_table, hide_index=True, width="stretch")
 
 
-def render_condition_flow(result: DisplayResult) -> None:
-    """入力条件から信号曲線へ至る計算の流れを視覚的に表示する。"""
-
-    st.markdown("#### 入力条件から信号曲線への反映")
-    st.markdown(
-        f"""
-<div class="simulation-flow">
-  <div class="flow-card flow-input">
-    <span class="flow-step">1　入力条件</span>
-    <strong>{result.weight_kg:.0f} kg</strong>
-    <small>TI scout：2回目注入後 {st.session_state.scout_time_after_second:.1f}分</small>
-    <small>PSIR：2回目注入後 {st.session_state.psir_time_after_second:.1f}分</small>
-  </div>
-  <div class="flow-arrow">→</div>
-  <div class="flow-card flow-dose">
-    <span class="flow-step">2　分割投与量</span>
-    <strong>{result.dose.first_volume_ml:.1f} + {result.dose.second_volume_ml:.1f} mL</strong>
-    <small>1回目 + 2回目</small>
-  </div>
-  <div class="flow-arrow">→</div>
-  <div class="flow-card flow-total">
-    <span class="flow-step">3　実投与量</span>
-    <strong>{result.dose.total_dose_mmol_per_kg:.3f} mmol/kg</strong>
-    <small>目標 {config.TARGET_TOTAL_DOSE_MMOL_PER_KG:.3f} mmol/kg</small>
-  </div>
-  <div class="flow-arrow">→</div>
-  <div class="flow-card flow-signal">
-    <span class="flow-step">4　信号曲線へ反映</span>
-    <strong>心筋 {result.corrected_null_ti_ms:.0f} ms</strong>
-    <small>血液null {result.corrected_blood_null_ti_ms:.0f} ms</small>
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
-
 def render_psir_ti_guide(result: DisplayResult) -> None:
     """選択したPSIR開始時刻から15分までの推定心筋null TIを表示する。"""
 
@@ -774,61 +737,6 @@ div[data-testid="stNumberInput"] input {
     color: #5f6672;
     font-size: 0.78rem;
 }
-.simulation-flow {
-    display: flex;
-    align-items: stretch;
-    gap: 0.55rem;
-    width: 100%;
-    margin: 0.25rem 0 1.2rem 0;
-}
-.flow-card {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.22rem;
-    padding: 0.85rem 0.9rem;
-    border: 1px solid #d7dce5;
-    border-radius: 0.65rem;
-    background: #f7f8fa;
-}
-.flow-card .flow-step {
-    color: #536174;
-    font-size: 0.92rem;
-    font-weight: 750;
-}
-.flow-card strong {
-    color: #202631;
-    font-size: 1.28rem;
-    line-height: 1.2;
-    white-space: nowrap;
-}
-.flow-card small {
-    color: #626b79;
-    font-size: 0.84rem;
-}
-.flow-input { border-top: 4px solid #627d9f; }
-.flow-dose { border-top: 4px solid #8675a9; }
-.flow-total { border-top: 4px solid #4c8b78; }
-.flow-signal { border-top: 4px solid #bd7655; }
-.flow-arrow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #77808e;
-    font-size: 1.55rem;
-    font-weight: 800;
-}
-@media (max-width: 900px) {
-    .simulation-flow {
-        flex-direction: column;
-    }
-    .flow-arrow {
-        transform: rotate(90deg);
-        min-height: 1.2rem;
-    }
-}
 </style>
 """,
     unsafe_allow_html=True,
@@ -1000,7 +908,6 @@ except ValueError as error:
     st.stop()
 
 render_injection_table(result)
-render_condition_flow(result)
 
 display_columns = st.columns([1.65, 1.0], gap="large")
 with display_columns[0]:
