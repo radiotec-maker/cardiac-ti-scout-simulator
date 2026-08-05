@@ -788,7 +788,6 @@ def render_result_workspace(
         )
 
     with display_columns[1]:
-        st.subheader("左室短軸像")
         st.markdown(
             f"<h3 style='text-align:center;margin:0.15rem 0 0.55rem'>"
             f"表示TI：{st.session_state.illustration_ti:.0f} ms</h3>",
@@ -842,6 +841,7 @@ def render_result_workspace(
             illustration_signal,
             illustration_blood_signal,
         )
+        st.subheader("左室短軸像")
 
     st.subheader("TI scout・PSIR推定結果")
     render_primary_result(result)
