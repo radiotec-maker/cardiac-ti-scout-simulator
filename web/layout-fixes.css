@@ -1,0 +1,33 @@
+/* 造影剤詳細表を左側パネル内に閉じ込める。 */
+.workspace,
+.control-panel,
+.results-panel,
+.card,
+details {
+  min-width: 0;
+}
+
+#dose-details {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+#dose-details table {
+  width: max-content;
+  min-width: 540px;
+  max-width: none;
+  font-size: 0.88rem;
+}
+
+#dose-details th,
+#dose-details td {
+  padding: 0.55rem 0.45rem;
+  white-space: nowrap;
+}
+
+#psir-guide {
+  min-width: 780px;
+}
