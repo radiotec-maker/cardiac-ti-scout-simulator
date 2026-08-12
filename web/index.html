@@ -1,10 +1,81 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="心臓MRI正常心筋TI–信号強度の教育用シミュレータ"><title>心臓MRI 正常心筋TI–信号強度シミュレータ</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="layout-fixes.css"><script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script></head>
-<body><header class="page-header"><div><h1>心臓MRI 正常心筋TI–信号強度シミュレータ</h1><p>3 T・ガドビスト分割投与モデル</p></div><button id="reset" class="secondary">初期値に戻す</button></header>
-<main class="workspace"><aside class="control-panel">
-<section class="card"><h2>入力条件</h2><p class="muted">撮像時刻はインジェクターの2回目造影剤注入開始を0分とした経過時間です。</p>
-<label>設定体重［kg］<input id="weight" type="number" min="30" max="100" step="1"></label><label>TI scout撮像時刻［2回目注入後 min］<input id="scout-time" type="number" min="0.5" max="13" step="0.1"></label><label>PSIR撮像開始時刻［2回目注入後 min］<input id="psir-time" type="number" min="0.5" max="15" step="0.1"></label>
-<details><summary>詳細設定</summary><label>正常心筋native T1［ms］<input id="native-t1" type="number" min="1000" max="1600" step="10"></label><label>血液native T1［ms］<input id="native-blood-t1" type="number" min="1400" max="2200" step="10"></label></details><p id="error" class="error" role="alert"></p></section>
-<section class="card"><h2>造影剤投与量</h2><p id="dose-caption" class="muted"></p><div class="dose-metric"><span>1回目（perfusion）</span><strong id="first-volume"></strong></div><div class="dose-metric"><span>2回目（追加注入）</span><strong id="second-volume"></strong></div><div class="dose-metric"><span>実投与量（目標 0.200 mmol/kg）</span><strong id="total-dose"></strong></div><details><summary>造影剤注入条件の詳細を確認</summary><div id="dose-details"></div></details></section></aside>
-<section class="results-panel"><div class="visual-grid card"><div><div id="signal-chart" aria-label="心筋と血液のTI信号曲線"></div><label class="slider-label">表示TI［ms］<input id="display-ti" type="range" min="0" max="700" step="1"><output id="display-ti-value"></output></label></div><div class="illustration-panel"><h2 id="display-ti-heading"></h2><div class="ti-buttons"><button data-shift="-30">−30</button><button data-shift="-10">−10</button><button data-shift="10">+10</button><button data-shift="30">+30</button></div><div id="heart-illustration"></div><h2>左室短軸像</h2></div></div>
-<section class="card"><h2>TI scout・PSIR推定結果</h2><p id="result-caption" class="muted"></p><div id="primary-results" class="primary-results"></div></section><section class="card"><h2>PSIR撮像時の設定TI目安</h2><strong>PSIR撮像開始時刻［2回目注入後 min］</strong><p id="guide-caption" class="muted"></p><div class="table-scroll"><table id="psir-guide"></table></div></section></section></main>
-<footer><p>TI scoutで正常心筋のnull位置を確認し、PSIR LGEのTI設定を考えるための教育用シミュレータ</p><p>本アプリは文献値および施設経験値に基づく教育・施設内検討用です。患者個別の最適TIや造影剤投与量を決定するものではありません。信号値は正規化された相対値です。</p></footer><script type="module" src="app.js"></script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="心臓MRI正常心筋TI–信号強度の教育用シミュレータ">
+  <title>心臓MRI 正常心筋TI–信号強度シミュレータ</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="layout-fixes.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <header class="page-header">
+    <div><h1>心臓MRI 正常心筋TI–信号強度シミュレータ</h1><p>3 T・ガドビスト分割投与モデル</p></div>
+    <button id="reset" class="secondary">初期値に戻す</button>
+  </header>
+  <main class="workspace">
+    <aside class="control-panel">
+      <section class="card">
+        <h2>入力条件</h2>
+        <p class="muted">撮像時刻はインジェクターの2回目造影剤注入開始を0分とした経過時間です。</p>
+        <label>設定体重［kg］<input id="weight" type="number" min="30" max="100" step="1"></label>
+        <label>TI scout撮像時刻［2回目注入後 min］<input id="scout-time" type="number" min="0.5" max="13" step="0.1"></label>
+        <label>PSIR撮像開始時刻［2回目注入後 min］<input id="psir-time" type="number" min="0.5" max="15" step="0.1"></label>
+        <details><summary>詳細設定</summary><label>正常心筋native T1［ms］<input id="native-t1" type="number" min="1000" max="1600" step="10"></label><label>血液native T1［ms］<input id="native-blood-t1" type="number" min="1400" max="2200" step="10"></label></details>
+        <p id="error" class="error" role="alert"></p>
+      </section>
+      <section class="card dose-card">
+        <h2>造影剤投与量 <small>設定体重に連動</small></h2><p id="dose-caption" class="muted"></p>
+        <div class="dose-metric"><span>1回目（perfusion）</span><strong id="first-volume"></strong></div>
+        <div class="dose-metric"><span>2回目（追加注入）</span><strong id="second-volume"></strong></div>
+        <div class="dose-metric"><span>実投与量（目標 0.200 mmol/kg）</span><strong id="total-dose"></strong></div>
+        <details><summary>造影剤注入条件の詳細を確認</summary><div id="dose-details"></div></details>
+      </section>
+    </aside>
+    <section class="results-panel">
+      <div class="visual-grid card">
+        <div><div id="signal-chart" aria-label="心筋、血液、仮想病変のTI信号曲線"></div><label class="slider-label">表示TI［ms］<input id="display-ti" type="range" min="0" max="700" step="1"><output id="display-ti-value"></output></label></div>
+        <div class="illustration-panel">
+          <h2 id="display-ti-heading"></h2>
+          <div class="ti-buttons"><button data-shift="-30">−30</button><button data-shift="-10">−10</button><button data-shift="10">+10</button><button data-shift="30">+30</button></div>
+          <div id="heart-illustration"></div>
+          <h2>左室短軸像</h2>
+          <p id="illustration-lesion-label" class="lesion-image-label" hidden></p>
+          <section class="lesion-card illustration-lesion-controls">
+            <h2>仮想LGE病変</h2>
+            <button id="toggle-lesion" class="lesion-toggle" type="button" aria-pressed="false">＋ 仮想病変を追加</button>
+            <div id="lesion-controls" hidden>
+              <label>代表的LGEパターン
+                <select id="lesion-pattern">
+                  <option value="myocarditis">心筋炎</option>
+                  <option value="hcm">HCM</option>
+                  <option value="dcm">DCM</option>
+                  <option value="amyloidosis">心アミロイドーシス</option>
+                  <option value="fabry">Fabry病</option>
+                  <option value="sarcoidosis">心サルコイドーシス</option>
+                  <option value="infarct-subendocardial">心筋梗塞（心内膜下型）</option>
+                  <option value="infarct-transmural">心筋梗塞（貫壁型）</option>
+                </select>
+              </label>
+              <p id="lesion-description" class="lesion-description"></p>
+              <p class="muted lesion-model-note">病変分布は代表例です。信号曲線には、病変null TIを正常心筋より50 ms早くした共通の教育用モデルを使用します。</p>
+              <details class="lesion-references">
+                <summary>参考文献</summary>
+                <ul>
+                  <li><a href="https://www.jstage.jst.go.jp/article/naika/105/10/105_2041/_article/-char/ja/" target="_blank" rel="noopener noreferrer">疾患別LGE表：MRIによる心筋疾患の診断（図1）</a></li>
+                </ul>
+                <p class="muted">リンクは新しいタブで開きます。</p>
+              </details>
+            </div>
+          </section>
+        </div>
+      </div>
+      <section class="card"><h2>TI scout・PSIR推定結果</h2><p id="result-caption" class="muted"></p><div id="primary-results" class="primary-results"></div></section>
+      <section class="card"><h2>PSIR撮像時の設定TI目安</h2><strong>PSIR撮像開始時刻［2回目注入後 min］</strong><p id="guide-caption" class="muted"></p><div class="table-scroll"><table id="psir-guide"></table></div></section>
+    </section>
+  </main>
+  <footer><p>TI scoutで正常心筋のnull位置を確認し、PSIR LGEのTI設定を考えるための教育用シミュレータ</p><p>本アプリは文献値および施設経験値に基づく教育・施設内検討用です。患者個別の最適TIや造影剤投与量を決定するものではありません。信号値は正規化された相対値です。</p></footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

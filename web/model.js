@@ -9,6 +9,7 @@ export const CONFIG = Object.freeze({
   aPk: 3.82385, washout: 0.054457, relaxivity: 5, facilityOffset: 57,
   aBlood: 5.86776, bloodWashout: 0.07316, bloodRelaxivity: 5,
   bloodFacilityOffset: 0,
+  lesionNullOffset: -50,
   ti: { default: 250, min: 0, max: 700, step: 1 },
   myocardialGamma: 0.5,
 });
@@ -53,6 +54,7 @@ export function postContrastT1(nativeT1Ms, concentrationMm, relaxivity, label="n
   return 1000/(1000/nativeT1+r1*c);
 }
 export function correctedNullTi(postT1Ms,offsetMs){const value=finite(postT1Ms,"造影後T1")*Math.log(2)+finite(offsetMs,"施設校正値");if(value<=0)throw new Error("施設校正後null TIは0より大きい必要があります。");return value;}
+export function virtualLesionNullTi(normalMyocardialNullTiMs,offsetMs=CONFIG.lesionNullOffset){const normal=finite(normalMyocardialNullTiMs,"正常心筋null TI"),offset=finite(offsetMs,"病変null TI差"),value=normal+offset;if(value<=0)throw new Error("仮想病変null TIは0より大きい必要があります。");return value;}
 export function signalAtTi(nullTiMs,tiMs){const nullTi=finite(nullTiMs,"null TI"),ti=inRange(tiMs,CONFIG.ti.min,CONFIG.ti.max,"表示TI");return 100*Math.abs(1-2*Math.exp(-ti/(nullTi/Math.log(2))));}
 export function signalCurve(nullTiMs){const ti=[],signal=[];for(let value=0;value<=700;value+=1){ti.push(value);signal.push(signalAtTi(nullTiMs,value));}return{ti,signal};}
 export function grayscale(signalPercent,gamma=1){const signal=inRange(signalPercent,0,100,"相対信号");return Math.round(255*(signal/100)**gamma);}
