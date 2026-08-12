@@ -1,4 +1,6 @@
 name: Deploy static web app to GitHub Pages
+
+# GitHub Pages の Source はリポジトリ設定で GitHub Actions を使用する。
 on:
   push:
     branches: [master]
