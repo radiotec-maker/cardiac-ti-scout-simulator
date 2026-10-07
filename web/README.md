@@ -1,6 +1,6 @@
 # 静的Web版
 
-既存のStreamlit版を変更せず並行運用する、GitHub Pages向けの静的Web版です。
+GitHub Pages向けの静的Webアプリです。概要はルートのREADME.mdを参照してください。
 
 ローカル確認：`py -m http.server 8080 --directory web`
 
