@@ -5,7 +5,7 @@ export const CONFIG = Object.freeze({
   nativeT1: { default: 1250, min: 1000, max: 1600, step: 10 },
   nativeBloodT1: { default: 1800, min: 1400, max: 2200, step: 10 },
   firstDose: 0.05, targetTotalDose: 0.20, maxVolume: 10,
-  injectorStep: 0.1, injectionRate: 2, secondInjectionTime: 1.5,
+  injectorStep: 0.1, injectionRate: 2, secondInjectionTime: 1.0,
   aPk: 3.82385, washout: 0.054457, relaxivity: 5, facilityOffset: 57,
   aBlood: 5.86776, bloodWashout: 0.07316, bloodRelaxivity: 5,
   bloodFacilityOffset: 0,

@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {calculateDose,correctedNullTi,postContrastT1,signalAtTi,simulate,virtualLesionNullTi} from "../model.js";
+import {CONFIG,calculateDose,correctedNullTi,postContrastT1,signalAtTi,simulate,virtualLesionNullTi} from "../model.js";
 const close=(a,e,t)=>assert.ok(Math.abs(a-e)<=t,`${a} != ${e}`);
 test("代表体重の投与量がPython版と一致する",()=>{for(const[w,f,s,total]of[[30,1.5,4.5,6],[45,2.3,6.7,9],[50,2.5,7.5,10],[55,2.8,7.2,10],[70,3.5,6.5,10],[100,5,5,10]]){const d=calculateDose(w);close(d.firstVolumeMl,f,1e-9);close(d.secondVolumeMl,s,1e-9);close(d.totalVolumeMl,total,1e-9);}});
-test("標準入力の結果",()=>{const r=simulate({weight:50,scoutAfterSecond:5,psirAfterSecond:8,nativeT1:1250,nativeBloodT1:1800});close(r.myocardialNullTi,247,1);close(r.bloodNullTi,153,1);close(r.psirNullTi,272,1);});
+test("2回目注入は1回目注入開始の1分後",()=>close(CONFIG.secondInjectionTime,1,1e-12));
+test("標準入力の結果",()=>{const r=simulate({weight:50,scoutAfterSecond:5,psirAfterSecond:8,nativeT1:1250,nativeBloodT1:1800});close(r.myocardialNullTi,246,1);close(r.bloodNullTi,152,1);close(r.psirNullTi,271,1);});
 test("45 kgは0.200 mmol/kg",()=>close(calculateDose(45).totalDoseMmolPerKg,.2,1e-12));
 test("nullで信号ゼロ",()=>close(signalAtTi(250,250),0,1e-12));
 test("T1とnull式",()=>{const t=postContrastT1(1250,.5,5);close(correctedNullTi(t,57),t*Math.log(2)+57,1e-12);});
