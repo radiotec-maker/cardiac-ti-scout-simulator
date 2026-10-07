@@ -71,7 +71,7 @@
           </section>
         </div>
       </div>
-      <section class="card"><h2>TI scout・PSIR推定結果</h2><p id="result-caption" class="muted"></p><div id="primary-results" class="primary-results"></div></section>
+      <section class="card"><h2>TI scout・PSIR推定結果</h2><p id="result-caption" class="muted"></p><div id="primary-results" class="primary-results"></div><details><summary>血液モデル・参考文献</summary><p>血液T1・null TIは、文献のLV blood poolのT1-derived apparent Gd concentrationを基に、正常心筋とは独立して推定します。採血による直接測定濃度ではありません。</p><p><a href="https://www.nature.com/articles/s41598-026-60404-1" target="_blank" rel="noopener noreferrer">Ohta Y, Shiotani M, Morita Y, et al. Estimation of myocardial and blood gadolinium concentrations from T1 mapping via pharmacokinetic modeling: influence of elastic deformation registration. Scientific Reports (2026).</a></p><p>血液係数 A_blood=5.657 mM/(mmol/kg)、k_blood=0.06020 min⁻¹は、ER後の2・5・9・15分の平均値を、本シミュレータ用の簡略mono-exponential/two-injection modelへ再回帰した値です。論文が直接報告したPK係数ではありません。</p><p>C=A_blood[D1 exp(−kt)+D2 exp(−k(t−τ))]（第2項はt≥τのみ）。r1=5.0 L mmol⁻¹ s⁻¹、T1post=1/(1/T1native+r1C)、null TI=T1post ln(2)。信号は100×|1−2 exp(−TI/T1post)|です。</p><p>文献検証条件：D1=D2=0.05 mmol/kg、τ=100/60分。施設の投与量・注入開始間隔1分は別条件として計算します。血液native T1は既存の1800 msを維持しています。この初期値の文献根拠は旧コード・仕様書に記録されていません。</p></details></section>
       <section class="card"><h2>PSIR撮像時の設定TI目安</h2><strong>PSIR撮像開始時刻［2回目注入後 min］</strong><p id="guide-caption" class="muted"></p><div class="table-scroll"><table id="psir-guide"></table></div></section>
     </section>
   </main>

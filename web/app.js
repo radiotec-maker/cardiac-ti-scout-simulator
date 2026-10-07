@@ -1,4 +1,4 @@
-import{CONFIG,grayscale,signalAtTi,signalCurve,simulate,myocardialConcentration,postContrastT1,correctedNullTi,virtualLesionNullTi}from"./model.js";
+import{CONFIG,grayscale,signalAtTi,signalCurve,bloodSignalAtTi,bloodSignalCurve,simulate,myocardialConcentration,postContrastT1,correctedNullTi,virtualLesionNullTi}from"./model.js";
 
 const $=id=>document.getElementById(id);
 // LGEの位置・分布は、Shah DJらの虚血性／非虚血性パターン分類と、
@@ -105,12 +105,12 @@ function heartSvg(myoSignal,bloodSignal,lesionSignal=null){
 function renderIllustration(){
   const r=state.result,ti=state.displayTi;$("display-ti").value=ti;$("display-ti-value").textContent=`${fmt(ti)} ms`;$("display-ti-heading").textContent=`表示TI：${fmt(ti)} ms`;
   const lesionSignal=state.lesionEnabled?signalAtTi(lesionNullTi(),ti):null;
-  $("heart-illustration").innerHTML=heartSvg(signalAtTi(r.myocardialNullTi,ti),signalAtTi(r.bloodNullTi,ti),lesionSignal);
+  $("heart-illustration").innerHTML=heartSvg(signalAtTi(r.myocardialNullTi,ti),bloodSignalAtTi(r.postBloodT1,ti),lesionSignal);
   Plotly.relayout("signal-chart",{"shapes[0].x0":ti,"shapes[0].x1":ti});
 }
 
 function renderChart(r){
-  const m=signalCurve(r.myocardialNullTi),b=signalCurve(r.bloodNullTi);
+  const m=signalCurve(r.myocardialNullTi),b=bloodSignalCurve(r.postBloodT1);
   const traces=[{x:m.ti,y:m.signal,name:"正常心筋",mode:"lines",line:{color:"#1976b9",width:3}},{x:b.ti,y:b.signal,name:"血液",mode:"lines",line:{color:"#d33",width:3}}];
   if(state.lesionEnabled){const l=signalCurve(lesionNullTi());traces.push({x:l.ti,y:l.signal,name:`仮想LGE：${currentPreset().name}`,mode:"lines",line:{color:"#e07a16",width:4}});}
   const layout={margin:{l:58,r:20,t:45,b:125},xaxis:{title:{text:"Inversion Time（TI）［ms］",standoff:16},range:[0,700],fixedrange:true},yaxis:{title:"正規化Magnitude信号［%］",range:[0,100],fixedrange:true},hovermode:"x unified",dragmode:false,shapes:[{type:"line",x0:state.displayTi,x1:state.displayTi,y0:0,y1:1,yref:"paper",line:{color:"#333",width:2,dash:"dot"}}],legend:{orientation:"h",x:.5,xanchor:"center",y:-.38,yanchor:"top"}};
